@@ -9,7 +9,7 @@
   - [x] Add axios for API calls
   - [x] Configure Jest + React Testing Library
   - [x] Set up Supertest for API testing
-  - [ ] Add Prettier/ESLint config
+  - [x] Add Prettier/ESLint config
 
 ### Docker Configuration
 
@@ -31,30 +31,34 @@
   - [x] Pagination handling
   - [x] Error handling/retries
   - [x] Comprehensive test suite
+- [x] Implement caching utility
+  - [x] Generic Cache class
+  - [x] TTL support
+  - [x] Separate instances per endpoint
 
 ### API Endpoints
 
 #### /api/mrs/too-old
 
-- [ ] Core endpoint implementation
-- [ ] 28-day threshold logic
-- [ ] Caching layer
-- [ ] Pagination support
-- [ ] Test coverage (100%)
+- [x] Core endpoint implementation
+- [x] 28-day threshold logic
+- [x] Caching layer
+- [x] Pagination support
+- [x] Test coverage (100%)
 
 #### /api/mrs/not-updated
 
-- [ ] 14-day threshold check
-- [ ] Separate cache instance
-- [ ] Updated_at filtering
-- [ ] Edge case tests
+- [x] 14-day threshold check
+- [x] Separate cache instance
+- [x] Updated_at filtering
+- [x] Edge case tests
 
 #### /api/mrs/pending-review
 
-- [ ] Reviewer filtering
-- [ ] 7-day threshold
-- [ ] Shared cache validation
-- [ ] Multi-reviewer test cases
+- [x] Reviewer filtering
+- [x] 7-day threshold
+- [x] Shared cache validation
+- [x] Multi-reviewer test cases
 
 ## Phase 3: Frontend Implementation
 
@@ -78,7 +82,7 @@
   - [ ] Coordinated loading
   - [ ] Error propagation
 - [ ] Branding implementation
-  - [ ] Color scheme
+  - [x] Color scheme
   - [ ] Typography
   - [ ] Spacing system
 
@@ -86,10 +90,10 @@
 
 ### API Security
 
-- [ ] Authentication middleware
-  - [ ] API key validation
-  - [ ] Header enforcement
-  - [ ] Healthcheck exclusion
+- [x] Authentication middleware
+  - [x] API key validation
+  - [x] Header enforcement
+  - [x] Healthcheck exclusion
   - [ ] Rate limiting scaffold
 
 ### CI/CD Pipeline
