@@ -11,6 +11,8 @@ const customJestConfig = {
   testEnvironment: "jest-environment-jsdom",
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1",
+    "^next-nprogress-bar$":
+      "<rootDir>/src/test/__mocks__/next-nprogress-bar.js",
   },
   collectCoverageFrom: [
     "src/**/*.{js,jsx,ts,tsx}",

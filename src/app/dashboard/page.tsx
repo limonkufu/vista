@@ -11,6 +11,8 @@ import { cn, debounce } from "@/lib/utils";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useKeyboardShortcut } from "@/hooks/useKeyboardShortcut";
 import { toast } from "sonner";
+import { fetchAPI } from "@/lib/api";
+import { ThresholdSettings } from "@/components/ThresholdSettings/ThresholdSettings";
 
 interface MRResponse {
   items: GitLabMR[];
@@ -51,8 +53,15 @@ export default function DashboardPage() {
     setTooOldError(undefined);
     try {
       logger.info("Fetching too-old MRs", { page }, "Dashboard");
-      const response = await fetch(`/api/mrs/too-old?page=${page}`);
-      if (!response.ok) throw new Error("Failed to fetch too-old MRs");
+      const response = await fetchAPI(
+        `/api/mrs/too-old?page=${page}${isInitialLoad ? "" : "&refresh=true"}`
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.details || "Failed to fetch too-old MRs");
+      }
+
       const data = await response.json();
       setTooOldMRs(data);
       logger.debug(
@@ -80,8 +89,17 @@ export default function DashboardPage() {
     setNotUpdatedError(undefined);
     try {
       logger.info("Fetching not-updated MRs", { page }, "Dashboard");
-      const response = await fetch(`/api/mrs/not-updated?page=${page}`);
-      if (!response.ok) throw new Error("Failed to fetch not-updated MRs");
+      const response = await fetchAPI(
+        `/api/mrs/not-updated?page=${page}${
+          isInitialLoad ? "" : "&refresh=true"
+        }`
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.details || "Failed to fetch not-updated MRs");
+      }
+
       const data = await response.json();
       setNotUpdatedMRs(data);
       logger.debug(
@@ -109,8 +127,19 @@ export default function DashboardPage() {
     setPendingReviewError(undefined);
     try {
       logger.info("Fetching pending-review MRs", { page }, "Dashboard");
-      const response = await fetch(`/api/mrs/pending-review?page=${page}`);
-      if (!response.ok) throw new Error("Failed to fetch pending-review MRs");
+      const response = await fetchAPI(
+        `/api/mrs/pending-review?page=${page}${
+          isInitialLoad ? "" : "&refresh=true"
+        }`
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.details || "Failed to fetch pending-review MRs"
+        );
+      }
+
       const data = await response.json();
       setPendingReviewMRs(data);
       logger.debug(
@@ -187,23 +216,30 @@ export default function DashboardPage() {
             Press Ctrl+R to refresh all tables
           </p>
         </div>
-        <Button
-          onClick={refreshAll}
-          disabled={
-            isLoadingTooOld || isLoadingNotUpdated || isLoadingPendingReview
-          }
-        >
-          <RefreshCw
-            data-testid="refresh-icon"
-            className={cn("mr-2 h-4 w-4", {
-              "animate-spin":
-                isLoadingTooOld ||
-                isLoadingNotUpdated ||
-                isLoadingPendingReview,
-            })}
-          />
-          Refresh All
-        </Button>
+        <div className="flex items-center gap-2">
+          <ThresholdSettings />
+          <Button
+            variant="default"
+            onClick={refreshAll}
+            disabled={
+              isLoadingTooOld || isLoadingNotUpdated || isLoadingPendingReview
+            }
+            title="Refresh all data (Alt+R)"
+          >
+            <RefreshCw
+              data-testid="refresh-icon"
+              className={cn("mr-2 h-4 w-4", {
+                "animate-spin":
+                  isLoadingTooOld ||
+                  isLoadingNotUpdated ||
+                  isLoadingPendingReview,
+              })}
+            />
+            {isLoadingTooOld || isLoadingNotUpdated || isLoadingPendingReview
+              ? "Refreshing..."
+              : "Refresh All"}
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-8">
