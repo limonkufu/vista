@@ -2,92 +2,181 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 # GitLab MRs Dashboard
 
-A dashboard for monitoring and analyzing GitLab merge requests for team hygiene.
+A dashboard for monitoring GitLab merge requests, focusing on team hygiene metrics such as age, update frequency, and review status.
+
+## Features
+
+- Monitor MRs older than 28 days
+- Track MRs not updated in 14 days
+- Identify MRs pending review for more than 7 days
+- Responsive design with mobile support
+- Real-time data with caching
+- Secure API endpoints with rate limiting
+
+## Tech Stack
+
+- Next.js 14 with TypeScript
+- shadcn/ui for components
+- Jest & React Testing Library for unit tests
+- Cypress for E2E testing
+- GitLab CI/CD pipeline
+- Docker containerization
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18 or higher
-- npm
-- Docker and Docker Compose (for containerized development)
-- GitLab API token with read access to repositories
+- Node.js 18 or later
+- npm 9 or later
+- Docker (optional)
 
-### Environment Setup
+### Local Development
 
-1. Copy the example environment file:
+1. Clone the repository:
 
    ```bash
-   cp .env.example .env.local
+   git clone <repository-url>
+   cd gitlab-mrs-dashboard
    ```
 
-2. Edit `.env.local` and add your GitLab API token and user IDs:
+2. Install dependencies:
 
-   ```
-   GITLAB_API_TOKEN=your_gitlab_api_token_here
-   GITLAB_USER_IDS=123456:789012:345678  # Colon-separated list of GitLab user IDs
-   API_KEY=your_api_key_here  # For securing custom endpoints
+   ```bash
+   npm install
    ```
 
-### Development
+3. Set up environment variables:
 
-#### Option 1: Local Development
+   ```bash
+   cp .env.example .env
+   ```
 
-Run the development server:
+   Edit `.env` and add:
+   - `GITLAB_API_TOKEN`: Your GitLab API token
+   - `GITLAB_USER_IDS`: Colon-separated list of team member GitLab user IDs
+   - `API_KEY`: Secret key for API authentication
+
+4. Start the development server:
+
+   ```bash
+   npm run dev
+   ```
+
+5. Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+### Testing
+
+#### Unit Tests
 
 ```bash
-npm run dev
+# Run all tests
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Generate coverage report
+npm run test:coverage
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+#### E2E Tests
 
-#### Option 2: Docker Development
+```bash
+# Run E2E tests headlessly
+npm run test:e2e
 
-Run the application using Docker Compose:
+# Open Cypress for development
+npm run test:e2e:dev
+```
+
+### Docker
+
+Build and run with Docker:
+
+```bash
+# Build image
+docker build -t gitlab-mrs-dashboard .
+
+# Run container
+docker run -p 3000:3000 \
+  -e GITLAB_API_TOKEN=your_token \
+  -e GITLAB_USER_IDS=user_ids \
+  -e API_KEY=your_api_key \
+  gitlab-mrs-dashboard
+```
+
+Or use docker-compose:
 
 ```bash
 docker-compose up
 ```
 
-This will start the application in development mode with hot reloading enabled.
+## Deployment
 
-### Production Build
+### Environment Variables
 
-To build the Docker image for production:
+Required environment variables:
 
-```bash
-docker build -t gitlab-mrs-dashboard .
-```
+| Variable | Description |
+|----------|-------------|
+| `GITLAB_API_TOKEN` | GitLab personal access token |
+| `GITLAB_USER_IDS` | Team member GitLab user IDs (colon-separated) |
+| `API_KEY` | Secret key for API authentication |
 
-Run the production container:
+### CI/CD Pipeline
 
-```bash
-docker run -p 3000:3000 \
-  -e GITLAB_API_TOKEN=your_token \
-  -e GITLAB_USER_IDS=your_user_ids \
-  -e API_KEY=your_api_key \
-  gitlab-mrs-dashboard
-```
+The project includes a GitLab CI/CD pipeline with:
 
-## Testing
+1. Automated testing
+2. Security scanning
+3. Docker image building
+4. Production deployment
 
-Run tests with:
+### Production Deployment Checklist
 
-```bash
-npm test
-```
+- [ ] Set up environment variables
+- [ ] Configure SSL certificates
+- [ ] Set up monitoring
+- [ ] Configure backup strategy
+- [ ] Test rate limiting
+- [ ] Verify security headers
 
-For watch mode:
+## API Documentation
 
-```bash
-npm run test:watch
-```
+### Endpoints
 
-For coverage report:
+#### GET /api/mrs/too-old
 
-```bash
-npm run test:coverage
-```
+Returns MRs older than 28 days.
+
+#### GET /api/mrs/not-updated
+
+Returns MRs not updated in 14 days.
+
+#### GET /api/mrs/pending-review
+
+Returns MRs pending review for more than 7 days.
+
+### Authentication
+
+All API endpoints require an API key in the `x-api-key` header.
+
+### Rate Limiting
+
+- 100 requests per minute per IP
+- Returns 429 status code when limit exceeded
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Learn More
 

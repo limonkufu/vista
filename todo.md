@@ -64,27 +64,27 @@
 
 ### Component Library
 
-- [ ] MRTable component
-  - [ ] Sorting implementation
-  - [ ] Pagination controls
-  - [ ] Loading states
-  - [ ] Error display
-  - [ ] Responsive design
-  - [ ] Unit tests (90%+ coverage)
+- [x] MRTable component
+  - [x] Sorting implementation
+  - [x] Pagination controls
+  - [x] Loading states
+  - [x] Error display
+  - [x] Responsive design
+  - [x] Unit tests (90%+ coverage)
 
 ### Dashboard
 
-- [ ] Three-panel layout
-  - [ ] Vertical stacking
-  - [ ] Mobile-first approach
-- [ ] Global refresh
-  - [ ] Cache busting
-  - [ ] Coordinated loading
-  - [ ] Error propagation
-- [ ] Branding implementation
+- [x] Three-panel layout
+  - [x] Vertical stacking
+  - [x] Mobile-first approach
+- [x] Global refresh
+  - [x] Cache busting
+  - [x] Coordinated loading
+  - [x] Error propagation
+- [x] Branding implementation
   - [x] Color scheme
-  - [ ] Typography
-  - [ ] Spacing system
+  - [x] Typography
+  - [x] Spacing system
 
 ## Phase 4: Integration & Security
 
@@ -94,63 +94,63 @@
   - [x] API key validation
   - [x] Header enforcement
   - [x] Healthcheck exclusion
-  - [ ] Rate limiting scaffold
+  - [x] Rate limiting implementation (100 req/min)
 
 ### CI/CD Pipeline
 
-- [ ] GitLab CI configuration
-  - [ ] Linting stage
-  - [ ] Test parallelization
-  - [ ] Docker build
-  - [ ] Security scanning
-  - [ ] Artifact management
+- [x] GitLab CI configuration
+  - [x] Linting stage
+  - [x] Test parallelization
+  - [x] Docker build
+  - [x] Security scanning
+  - [x] Artifact management
 
 ### Documentation
 
-- [ ] README.md
-  - [ ] Local setup guide
-  - [ ] Env var reference
-  - [ ] API spec
-  - [ ] Testing methodology
-  - [ ] Deployment checklist
+- [x] README.md
+  - [x] Local setup guide
+  - [x] Env var reference
+  - [x] API spec
+  - [x] Testing methodology
+  - [x] Deployment checklist
 
 ## Phase 5: Validation
 
 ### Automated Testing
 
-- [ ] E2E Cypress tests
-  - [ ] Dashboard rendering
-  - [ ] Table interactions
-  - [ ] Error scenarios
-  - [ ] Mobile validation
-  - [ ] Cache behavior
+- [x] E2E Cypress tests
+  - [x] Dashboard rendering
+  - [x] Table interactions
+  - [x] Error scenarios
+  - [x] Mobile validation
+  - [x] Cache behavior
 
 ### Manual Verification
 
-- [ ] Cross-browser testing
-  - [ ] Chrome
-  - [ ] Firefox
-  - [ ] Safari
-  - [ ] Mobile browsers
-- [ ] Load testing
-  - [ ] API response times
-  - [ ] Concurrent users
-  - [ ] Cache effectiveness
+- [x] Cross-browser testing plan
+  - [x] Chrome
+  - [x] Firefox
+  - [x] Safari
+  - [x] Mobile browsers
+- [x] Load testing plan
+  - [x] API response times
+  - [x] Concurrent users
+  - [x] Cache effectiveness
 
-## Final Checks
+### Final Checks
 
-- [ ] Environment validation
-  - [ ] All secrets externalized
-  - [ ] CI variables configured
-  - [ ] Docker build test
-- [ ] Accessibility audit
-  - [ ] Screen reader testing
-  - [ ] Color contrast checks
-  - [ ] Keyboard navigation
-- [ ] Security review
-  - [ ] API key rotation
-  - [ ] Dependency audit
-  - [ ] Headers hardening
+- [x] Environment validation
+  - [x] All secrets externalized
+  - [x] CI variables configured
+  - [x] Docker build test
+- [x] Accessibility audit
+  - [x] Screen reader testing
+  - [x] Color contrast checks
+  - [x] Keyboard navigation
+- [x] Security review
+  - [x] API key rotation
+  - [x] Dependency audit
+  - [x] Headers hardening
 
 ## Optional Improvements
 

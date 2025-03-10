@@ -9,27 +9,41 @@
     "lint": "next lint",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "test:e2e": "start-server-and-test dev http://localhost:3000 cypress:run",
+    "test:e2e:dev": "start-server-and-test dev http://localhost:3000 cypress:open",
+    "cypress:run": "cypress run",
+    "cypress:open": "cypress open"
   },
   "dependencies": {
+    "@radix-ui/react-slot": "^1.1.2",
     "axios": "^1.8.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "limiter": "^3.0.0",
+    "lucide-react": "^0.479.0",
     "next": "15.2.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^3.0.2",
+    "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@testing-library/cypress": "^10.0.3",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.18",
+    "cypress": "^14.1.0",
     "eslint": "^9",
     "eslint-config-next": "15.2.1",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "postcss": "^8.4.35",
+    "start-server-and-test": "^2.0.10",
     "supertest": "^7.0.0",
     "tailwindcss": "^3.4.1",
     "typescript": "^5"
