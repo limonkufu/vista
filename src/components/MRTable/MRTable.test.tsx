@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { MRTable } from "./MRTable";
 import { GitLabMR } from "@/lib/gitlab";
 
@@ -148,14 +148,13 @@ describe("MRTable", () => {
     );
 
     // Test title sorting
-    fireEvent.click(screen.getByText("Title"));
-    let cells = screen.getAllByRole("cell");
-    expect(cells[0]).toHaveTextContent("A Test");
+    fireEvent.click(screen.getByRole("button", { name: /title/i }));
+    const rows = screen.getAllByRole("row");
+    expect(within(rows[1]).getByText("A Test")).toBeInTheDocument();
 
     // Test author sorting
-    fireEvent.click(screen.getByText("Author"));
-    cells = screen.getAllByRole("cell");
-    expect(cells[1]).toHaveTextContent("userA");
+    fireEvent.click(screen.getByRole("button", { name: /author/i }));
+    expect(within(rows[1]).getByText("userA")).toBeInTheDocument();
   });
 
   it("handles pagination", () => {
@@ -195,7 +194,7 @@ describe("MRTable", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("Refresh"));
+    fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
     expect(mockOnRefresh).toHaveBeenCalled();
   });
 
@@ -243,12 +242,8 @@ describe("MRTable", () => {
       />
     );
 
-    expect(
-      screen.getByText(new Date("2024-03-01T12:00:00Z").toLocaleDateString())
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(new Date("2024-03-10T12:00:00Z").toLocaleDateString())
-    ).toBeInTheDocument();
+    expect(screen.getByText("2024-03-01")).toBeInTheDocument();
+    expect(screen.getByText("2024-03-10")).toBeInTheDocument();
   });
 
   it("renders external links correctly", () => {
@@ -268,5 +263,21 @@ describe("MRTable", () => {
     expect(link).toHaveAttribute("href", "https://gitlab.com/mr/1");
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("displays threshold and last refreshed time", () => {
+    render(
+      <MRTable
+        title="Test Table"
+        items={[]}
+        isLoading={false}
+        metadata={mockMetadata}
+        onPageChange={mockOnPageChange}
+        onRefresh={mockOnRefresh}
+      />
+    );
+
+    expect(screen.getByText(/threshold: 28 days/i)).toBeInTheDocument();
+    expect(screen.getByText(/last refreshed:/i)).toBeInTheDocument();
   });
 });

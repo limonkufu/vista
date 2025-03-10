@@ -3,6 +3,8 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProviderClient } from "@/components/ThemeProviderClient";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
+import { AppProgressBar as ProgressBar } from "next-nprogress-bar";
+import { Toaster } from "sonner";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -20,6 +22,13 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <ThemeProviderClient>
+          <ProgressBar
+            height="2px"
+            color="#0284c7"
+            options={{ showSpinner: true }}
+            shallowRouting
+          />
+          <Toaster richColors position="top-right" />
           <div className="fixed top-4 right-4 z-50">
             <ThemeSwitcher />
           </div>

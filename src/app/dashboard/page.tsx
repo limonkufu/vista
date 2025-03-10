@@ -1,10 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { MRTable } from "@/components/MRTable/MRTable";
 import { GitLabMR } from "@/lib/gitlab";
 import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
+import { logger } from "@/lib/logger";
+import { Progress } from "@/components/ui/progress";
+import { cn, debounce } from "@/lib/utils";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { useKeyboardShortcut } from "@/hooks/useKeyboardShortcut";
+import { toast } from "sonner";
 
 interface MRResponse {
   items: GitLabMR[];
@@ -35,21 +41,37 @@ export default function DashboardPage() {
   const [notUpdatedError, setNotUpdatedError] = useState<string>();
   const [pendingReviewError, setPendingReviewError] = useState<string>();
 
+  // Initial loading state
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+
   // Fetch data for each table
   const fetchTooOldMRs = async (page = 1) => {
     setIsLoadingTooOld(true);
     setTooOldError(undefined);
     try {
+      logger.info("Fetching too-old MRs", { page }, "Dashboard");
       const response = await fetch(`/api/mrs/too-old?page=${page}`);
       if (!response.ok) throw new Error("Failed to fetch too-old MRs");
       const data = await response.json();
       setTooOldMRs(data);
-    } catch (error) {
-      setTooOldError(
-        error instanceof Error ? error.message : "An error occurred"
+      logger.debug(
+        "Received too-old MRs",
+        { count: data.items.length },
+        "Dashboard"
       );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "An error occurred";
+      logger.error(
+        "Error fetching too-old MRs",
+        { error: message },
+        "Dashboard"
+      );
+      setTooOldError(message);
     } finally {
       setIsLoadingTooOld(false);
+      if (isInitialLoad) setLoadingProgress((prev) => Math.min(prev + 33, 100));
     }
   };
 
@@ -57,16 +79,28 @@ export default function DashboardPage() {
     setIsLoadingNotUpdated(true);
     setNotUpdatedError(undefined);
     try {
+      logger.info("Fetching not-updated MRs", { page }, "Dashboard");
       const response = await fetch(`/api/mrs/not-updated?page=${page}`);
       if (!response.ok) throw new Error("Failed to fetch not-updated MRs");
       const data = await response.json();
       setNotUpdatedMRs(data);
-    } catch (error) {
-      setNotUpdatedError(
-        error instanceof Error ? error.message : "An error occurred"
+      logger.debug(
+        "Received not-updated MRs",
+        { count: data.items.length },
+        "Dashboard"
       );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "An error occurred";
+      logger.error(
+        "Error fetching not-updated MRs",
+        { error: message },
+        "Dashboard"
+      );
+      setNotUpdatedError(message);
     } finally {
       setIsLoadingNotUpdated(false);
+      if (isInitialLoad) setLoadingProgress((prev) => Math.min(prev + 33, 100));
     }
   };
 
@@ -74,42 +108,100 @@ export default function DashboardPage() {
     setIsLoadingPendingReview(true);
     setPendingReviewError(undefined);
     try {
+      logger.info("Fetching pending-review MRs", { page }, "Dashboard");
       const response = await fetch(`/api/mrs/pending-review?page=${page}`);
       if (!response.ok) throw new Error("Failed to fetch pending-review MRs");
       const data = await response.json();
       setPendingReviewMRs(data);
-    } catch (error) {
-      setPendingReviewError(
-        error instanceof Error ? error.message : "An error occurred"
+      logger.debug(
+        "Received pending-review MRs",
+        { count: data.items.length },
+        "Dashboard"
       );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "An error occurred";
+      logger.error(
+        "Error fetching pending-review MRs",
+        { error: message },
+        "Dashboard"
+      );
+      setPendingReviewError(message);
     } finally {
       setIsLoadingPendingReview(false);
+      if (isInitialLoad) {
+        setLoadingProgress(100);
+        setTimeout(() => setIsInitialLoad(false), 500); // Give time for progress bar animation
+      }
     }
   };
 
-  // Global refresh function
-  const refreshAll = () => {
-    fetchTooOldMRs(1);
-    fetchNotUpdatedMRs(1);
-    fetchPendingReviewMRs(1);
-  };
+  // Global refresh function with debounce
+  const refreshAll = useCallback(
+    debounce(() => {
+      logger.info("Refreshing all tables", {}, "Dashboard");
+      setLoadingProgress(0);
+      fetchTooOldMRs(1);
+      fetchNotUpdatedMRs(1);
+      fetchPendingReviewMRs(1);
+      toast.info("Refreshing data", {
+        description: "Fetching latest merge requests...",
+        duration: 2000,
+      });
+    }, 1000),
+    []
+  );
+
+  // Keyboard shortcut for refresh
+  useKeyboardShortcut({ key: "r", ctrlKey: true }, () => {
+    if (!isLoadingTooOld && !isLoadingNotUpdated && !isLoadingPendingReview) {
+      refreshAll();
+    }
+  });
 
   // Initial fetch on mount
   useEffect(() => {
     refreshAll();
-  }, []);
+  }, [refreshAll]);
 
-  return (
+  const content = (
     <div className="container py-8 space-y-8">
+      {isInitialLoad && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="w-full max-w-md space-y-4 p-6">
+            <h2 className="text-2xl font-bold text-center">
+              Loading Dashboard
+            </h2>
+            <Progress value={loadingProgress} className="w-full" />
+            <p className="text-center text-muted-foreground">
+              Fetching merge requests...
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">GitLab MRs Dashboard</h1>
+        <div>
+          <h1 className="text-3xl font-bold">GitLab MRs Dashboard</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Press Ctrl+R to refresh all tables
+          </p>
+        </div>
         <Button
           onClick={refreshAll}
           disabled={
             isLoadingTooOld || isLoadingNotUpdated || isLoadingPendingReview
           }
         >
-          <RefreshCw className="mr-2 h-4 w-4" />
+          <RefreshCw
+            data-testid="refresh-icon"
+            className={cn("mr-2 h-4 w-4", {
+              "animate-spin":
+                isLoadingTooOld ||
+                isLoadingNotUpdated ||
+                isLoadingPendingReview,
+            })}
+          />
           Refresh All
         </Button>
       </div>
@@ -171,4 +263,6 @@ export default function DashboardPage() {
       </div>
     </div>
   );
+
+  return <ErrorBoundary>{content}</ErrorBoundary>;
 }

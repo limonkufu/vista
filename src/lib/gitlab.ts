@@ -1,4 +1,5 @@
 import axios, { AxiosError } from 'axios';
+import { logger, measurePerformance } from './logger';
 
 /**
  * GitLab API base URL
@@ -169,11 +170,13 @@ export async function fetchTeamMRs(options: FetchTeamMRsOptions): Promise<GitLab
   const apiToken = process.env.GITLAB_API_TOKEN;
   
   if (!apiToken) {
+    logger.error('GITLAB_API_TOKEN environment variable is not set');
     throw new Error('GITLAB_API_TOKEN environment variable is not set');
   }
   
   const teamUserIds = getTeamUserIds();
   if (teamUserIds.length === 0) {
+    logger.error('GITLAB_USER_IDS environment variable is not set or is invalid');
     throw new Error('GITLAB_USER_IDS environment variable is not set or is invalid');
   }
   
@@ -190,8 +193,10 @@ export async function fetchTeamMRs(options: FetchTeamMRsOptions): Promise<GitLab
   // Retry logic for API calls
   const fetchWithRetry = async (): Promise<GitLabMRsResponse> => {
     try {
-      const response = await axios.get(
-        `${GITLAB_API_BASE_URL}/groups/${groupId}/merge_requests`, {
+      logger.info('Fetching GitLab MRs', { groupId, page, per_page, state }, 'GitLabAPI');
+      
+      const response = await measurePerformance('GitLab API Request', () =>
+        axios.get(`${GITLAB_API_BASE_URL}/groups/${groupId}/merge_requests`, {
           headers: {
             'PRIVATE-TOKEN': apiToken
           },
@@ -201,7 +206,8 @@ export async function fetchTeamMRs(options: FetchTeamMRsOptions): Promise<GitLab
             per_page,
             scope: 'all'
           }
-        });
+        })
+      );
       
       const headers = response.headers;
       const totalItems = parseInt(headers['x-total'] || '0', 10);
@@ -210,7 +216,21 @@ export async function fetchTeamMRs(options: FetchTeamMRsOptions): Promise<GitLab
       const prevPage = parseInt(headers['x-prev-page'] || '0', 10) || undefined;
       
       // Filter merge requests that are relevant to team members
-      const teamMRs = response.data.filter(isTeamRelevantMR);
+      const allMRs = response.data;
+      logger.debug('Received MRs from GitLab', { 
+        total: allMRs.length,
+        page,
+        totalPages
+      }, 'GitLabAPI');
+      
+      const teamMRs = await measurePerformance('Filter Team MRs', async () => 
+        allMRs.filter(isTeamRelevantMR)
+      );
+      
+      logger.info('Filtered team MRs', { 
+        total: teamMRs.length,
+        filtered: allMRs.length - teamMRs.length
+      }, 'GitLabAPI');
       
       return {
         items: teamMRs,
@@ -224,16 +244,30 @@ export async function fetchTeamMRs(options: FetchTeamMRsOptions): Promise<GitLab
         }
       };
     } catch (error) {
+      const axiosError = error as AxiosError;
+      
+      // Log the error with appropriate context
+      logger.error('GitLab API error', {
+        status: axiosError.response?.status,
+        statusText: axiosError.response?.statusText,
+        url: axiosError.config?.url,
+        retry: retries + 1,
+        maxRetries
+      }, 'GitLabAPI');
+      
       // Handle retry logic for certain errors
       if (retries < maxRetries) {
         retries++;
-        
-        const axiosError = error as AxiosError;
         
         // Only retry on 5xx errors or network errors
         if (!axiosError.response || (axiosError.response.status >= 500 && axiosError.response.status < 600)) {
           // Exponential backoff
           const delay = Math.pow(2, retries) * 1000;
+          logger.info(`Retrying request after ${delay}ms`, { 
+            attempt: retries,
+            maxRetries
+          }, 'GitLabAPI');
+          
           await new Promise(resolve => setTimeout(resolve, delay));
           return fetchWithRetry();
         }
