@@ -39,6 +39,12 @@ interface MRTableProps {
 type SortField = "title" | "author" | "created_at" | "updated_at";
 type SortDirection = "asc" | "desc";
 
+// Helper function to format dates consistently
+const formatDate = (dateString: string) => {
+  const date = new Date(dateString);
+  return date.toISOString().split('T')[0]; // Returns YYYY-MM-DD format
+};
+
 export function MRTable({
   title,
   items,
@@ -97,7 +103,7 @@ export function MRTable({
           <h2 className="text-2xl font-bold">{title}</h2>
           <p className="text-sm text-muted-foreground">
             Threshold: {metadata.threshold} days | Last refreshed:{" "}
-            {new Date(metadata.lastRefreshed).toLocaleString()}
+            {formatDate(metadata.lastRefreshed)}
           </p>
         </div>
         <Button
@@ -191,12 +197,8 @@ export function MRTable({
                         {mr.reviewers?.map((r) => r.username).join(", ") ||
                           "None"}
                       </TableCell>
-                      <TableCell>
-                        {new Date(mr.created_at).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell>
-                        {new Date(mr.updated_at).toLocaleDateString()}
-                      </TableCell>
+                      <TableCell>{formatDate(mr.created_at)}</TableCell>
+                      <TableCell>{formatDate(mr.updated_at)}</TableCell>
                       <TableCell>
                         <a
                           href={mr.web_url}

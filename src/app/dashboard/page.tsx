@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { MRTable } from "@/components/MRTable/MRTable";
 import { GitLabMR } from "@/lib/gitlab";
 import { Button } from "@/components/ui/button";
@@ -40,11 +40,7 @@ export default function DashboardPage() {
     setIsLoadingTooOld(true);
     setTooOldError(undefined);
     try {
-      const response = await fetch(`/api/mrs/too-old?page=${page}`, {
-        headers: {
-          "x-api-key": process.env.NEXT_PUBLIC_API_KEY!,
-        },
-      });
+      const response = await fetch(`/api/mrs/too-old?page=${page}`);
       if (!response.ok) throw new Error("Failed to fetch too-old MRs");
       const data = await response.json();
       setTooOldMRs(data);
@@ -61,11 +57,7 @@ export default function DashboardPage() {
     setIsLoadingNotUpdated(true);
     setNotUpdatedError(undefined);
     try {
-      const response = await fetch(`/api/mrs/not-updated?page=${page}`, {
-        headers: {
-          "x-api-key": process.env.NEXT_PUBLIC_API_KEY!,
-        },
-      });
+      const response = await fetch(`/api/mrs/not-updated?page=${page}`);
       if (!response.ok) throw new Error("Failed to fetch not-updated MRs");
       const data = await response.json();
       setNotUpdatedMRs(data);
@@ -82,11 +74,7 @@ export default function DashboardPage() {
     setIsLoadingPendingReview(true);
     setPendingReviewError(undefined);
     try {
-      const response = await fetch(`/api/mrs/pending-review?page=${page}`, {
-        headers: {
-          "x-api-key": process.env.NEXT_PUBLIC_API_KEY!,
-        },
-      });
+      const response = await fetch(`/api/mrs/pending-review?page=${page}`);
       if (!response.ok) throw new Error("Failed to fetch pending-review MRs");
       const data = await response.json();
       setPendingReviewMRs(data);
@@ -100,16 +88,14 @@ export default function DashboardPage() {
   };
 
   // Global refresh function
-  const refreshAll = async () => {
-    await Promise.all([
-      fetchTooOldMRs(1),
-      fetchNotUpdatedMRs(1),
-      fetchPendingReviewMRs(1),
-    ]);
+  const refreshAll = () => {
+    fetchTooOldMRs(1);
+    fetchNotUpdatedMRs(1);
+    fetchPendingReviewMRs(1);
   };
 
   // Initial fetch on mount
-  useState(() => {
+  useEffect(() => {
     refreshAll();
   }, []);
 
