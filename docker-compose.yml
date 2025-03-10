@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      target: deps # Using the deps stage for development to avoid full builds
+      dockerfile: Dockerfile
+    command: npm run dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules # Don't overwrite node_modules
+    environment:
+      - NODE_ENV=development
+      - GITLAB_API_TOKEN=${GITLAB_API_TOKEN}
+      - GITLAB_USER_IDS=${GITLAB_USER_IDS}
+      # Add other environment variables as needed
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s 
