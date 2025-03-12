@@ -119,7 +119,8 @@ export function MRFilters({ items, onFilter }: MRFiltersProps) {
 
     // Pass the filtered items and groupBy value to the parent component
     onFilter(result, filters.groupBy);
-  }, [filters, items, onFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters]); // Remove items and onFilter from dependencies
 
   const resetFilters = () => {
     setFilters({
@@ -198,7 +199,7 @@ export function MRFilters({ items, onFilter }: MRFiltersProps) {
               onValueChange={(value) =>
                 setFilters({
                   ...filters,
-                  assignee: value !== "all"  ? parseInt(value, 10) : null,
+                  assignee: value !== "all" ? parseInt(value, 10) : null,
                 })
               }
             >
@@ -223,7 +224,7 @@ export function MRFilters({ items, onFilter }: MRFiltersProps) {
               onValueChange={(value) =>
                 setFilters({
                   ...filters,
-                  reviewer: value !== "all"  ? parseInt(value, 10) : null,
+                  reviewer: value !== "all" ? parseInt(value, 10) : null,
                 })
               }
             >
