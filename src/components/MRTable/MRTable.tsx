@@ -45,6 +45,28 @@ const formatDate = (dateString: string) => {
   return date.toISOString().split('T')[0]; // Returns YYYY-MM-DD format
 };
 
+// Helper function to calculate time ago
+const timeAgo = (dateString: string) => {
+  const now = new Date();
+  const past = new Date(dateString);
+  const diffInMs = now.getTime() - past.getTime();
+  const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+  
+  if (diffInDays === 0) {
+    const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+    if (diffInHours === 0) {
+      const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
+      return `${diffInMinutes} minute${diffInMinutes !== 1 ? 's' : ''} ago`;
+    }
+    return `${diffInHours} hour${diffInHours !== 1 ? 's' : ''} ago`;
+  } else if (diffInDays < 30) {
+    return `${diffInDays} day${diffInDays !== 1 ? 's' : ''} ago`;
+  } else {
+    const diffInMonths = Math.floor(diffInDays / 30);
+    return `${diffInMonths} month${diffInMonths !== 1 ? 's' : ''} ago`;
+  }
+};
+
 export function MRTable({
   title,
   items,
@@ -197,8 +219,16 @@ export function MRTable({
                         {mr.reviewers?.map((r) => r.username).join(", ") ||
                           "None"}
                       </TableCell>
-                      <TableCell>{formatDate(mr.created_at)}</TableCell>
-                      <TableCell>{formatDate(mr.updated_at)}</TableCell>
+                      <TableCell>
+                        <span title={formatDate(mr.created_at)}>
+                          Created {timeAgo(mr.created_at)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span title={formatDate(mr.updated_at)}>
+                          Updated {timeAgo(mr.updated_at)}
+                        </span>
+                      </TableCell>
                       <TableCell>
                         <a
                           href={mr.web_url}

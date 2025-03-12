@@ -5,13 +5,13 @@
 // Default threshold values in days
 const DEFAULT_THRESHOLDS = {
   // MRs created more than this many days ago are considered "too old"
-  TOO_OLD_THRESHOLD: 1,
+  TOO_OLD_THRESHOLD: 28,
 
   // MRs not updated in this many days are considered "inactive"
-  NOT_UPDATED_THRESHOLD: 1,
+  NOT_UPDATED_THRESHOLD: 14,
 
   // MRs pending review from team members for more than this many days
-  PENDING_REVIEW_THRESHOLD: 1,
+  PENDING_REVIEW_THRESHOLD: 7,
 };
 
 // Current threshold values (can be modified at runtime)

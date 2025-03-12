@@ -127,15 +127,165 @@ export interface GitLabMRsResponse {
 }
 
 /**
- * Gets the user IDs from environment variables
+ * Interface for GitLab group from API response
+ */
+interface GitLabGroup {
+  id: number;
+  name: string;
+  path: string;
+  description?: string;
+  visibility: string;
+  full_path: string;
+  parent_id?: number;
+  web_url: string;
+}
+
+/**
+ * Interface for GitLab member from API response
+ */
+interface GitLabMember {
+  id: number;
+  name: string;
+  username: string;
+  state: string;
+  avatar_url: string;
+  web_url: string;
+  access_level: number;
+  expires_at: string | null;
+}
+
+/**
+ * Fetch GitLab user IDs by group name
+ * @param groupName Name of the group to search for
+ * @param parentGroupPath Parent group path (default: 'ska-telescope/ska-dev')
+ * @returns Array of user IDs and their information
+ */
+export async function fetchUserIdsByGroupName(
+  groupName: string,
+  parentGroupPath: string = 'ska-telescope/ska-dev'
+): Promise<{
+  ids: number[];
+  users: GitLabUser[];
+}> {
+  try {
+    logger.info('Fetching user IDs by group name', { groupName, parentGroupPath }, 'GitLab API');
+    
+    // First, find the group ID by name
+    const encodedParentPath = encodeURIComponent(parentGroupPath);
+    const encodedGroupName = encodeURIComponent(groupName);
+    const groupSearchUrl = `${GITLAB_API_BASE_URL}/groups/${encodedParentPath}/subgroups?search=${encodedGroupName}`;
+    
+    const groupResponse = await axios.get<GitLabGroup[]>(groupSearchUrl, {
+      headers: {
+        'PRIVATE-TOKEN': process.env.GITLAB_API_TOKEN || ''
+      }
+    });
+    
+    if (!groupResponse.data || groupResponse.data.length === 0) {
+      logger.warn('No groups found with the given name', { groupName }, 'GitLab API');
+      return { ids: [], users: [] };
+    }
+    
+    // Filter groups that match the name case-insensitively
+    const matchingGroups = groupResponse.data.filter(
+      (group: GitLabGroup) => group.name.toLowerCase() === groupName.toLowerCase()
+    );
+    
+    if (matchingGroups.length === 0) {
+      logger.warn('No exact match found for group name', { groupName }, 'GitLab API');
+      return { ids: [], users: [] };
+    }
+    
+    const groupId = matchingGroups[0].id;
+    
+    // Now fetch members of the group
+    const membersUrl = `${GITLAB_API_BASE_URL}/groups/${groupId}/members`;
+    const membersResponse = await axios.get<GitLabMember[]>(membersUrl, {
+      headers: {
+        'PRIVATE-TOKEN': process.env.GITLAB_API_TOKEN || ''
+      }
+    });
+    
+    const users = membersResponse.data.map((member: GitLabMember) => ({
+      id: member.id,
+      name: member.name,
+      username: member.username,
+      avatar_url: member.avatar_url,
+      web_url: member.web_url
+    }));
+    
+    const ids = users.map((user: GitLabUser) => user.id);
+    
+    logger.info('Successfully fetched user IDs by group name', 
+      { groupName, userCount: users.length }, 
+      'GitLab API'
+    );
+    
+    return { ids, users };
+  } catch (error) {
+    const errorMessage = error instanceof AxiosError 
+      ? error.response?.data?.message || error.message
+      : 'Unknown error';
+    
+    logger.error('Error fetching user IDs by group name', 
+      { groupName, error: errorMessage }, 
+      'GitLab API'
+    );
+    
+    throw new Error(`Failed to fetch user IDs by group name: ${errorMessage}`);
+  }
+}
+
+/**
+ * Get GitLab user IDs for the team
  * @returns Array of user IDs
  */
 export function getTeamUserIds(): number[] {
-  return (
-    process.env.GITLAB_USER_IDS?.split(":")
-      .map((id) => parseInt(id.trim()))
-      .filter((id) => !isNaN(id)) || []
-  );
+  const userIds = process.env.GITLAB_USER_IDS || "";
+
+  try {
+    // If userIds is empty, return an empty array
+    if (!userIds) {
+      logger.warn(
+        "No user IDs found in environment variables",
+        {},
+        "GitLab API"
+      );
+      return [];
+    }
+
+    // Parse the colon-separated user IDs
+    const parsedIds = userIds.split(":").map((id) => parseInt(id.trim(), 10));
+
+    // Filter out any NaN values
+    const validIds = parsedIds.filter((id) => !isNaN(id));
+
+    if (validIds.length === 0) {
+      logger.warn(
+        "No valid user IDs found in environment variables",
+        {},
+        "GitLab API"
+      );
+      return [];
+    }
+
+    if (validIds.length !== parsedIds.length) {
+      logger.warn(
+        "Some user IDs were invalid and have been filtered out",
+        {},
+        "GitLab API"
+      );
+    }
+
+    return validIds;
+  } catch (error) {
+    logger.error(
+      "Error parsing team user IDs",
+      { error: error instanceof Error ? error.message : "Unknown error" },
+      "GitLab API"
+    );
+    return [];
+  }
 }
 
 /**
@@ -203,7 +353,7 @@ export async function fetchTeamMRs(
     groupId = process.env.GITLAB_GROUP_ID,
     page = 1,
     per_page = 100,
-    state = "all",
+    state = "opened", // Default to only open MRs
     maxRetries = 3,
     include_subgroups = true,
   } = options;
@@ -249,6 +399,27 @@ export async function fetchTeamMRs(
       const nextPage = parseInt(headers["x-next-page"] || "0", 10) || undefined;
       const prevPage = parseInt(headers["x-prev-page"] || "0", 10) || undefined;
 
+      // Parse Link header for more reliable pagination
+      const linkHeader = headers.link || headers.Link;
+      const parsedLinks: Record<string, number> = {};
+
+      if (linkHeader && typeof linkHeader === "string") {
+        // Extract page numbers from the Link header
+        const linkMatches = linkHeader.match(
+          /<[^>]+\?page=(\d+)[^>]*>;\s*rel="([^"]+)"/g
+        );
+        if (linkMatches) {
+          linkMatches.forEach((link) => {
+            const match = link.match(
+              /<[^>]+\?page=(\d+)[^>]*>;\s*rel="([^"]+)"/
+            );
+            if (match && match[1] && match[2]) {
+              parsedLinks[match[2]] = parseInt(match[1], 10);
+            }
+          });
+        }
+      }
+
       // Filter merge requests that are relevant to team members
       const allMRs = response.data;
       logger.debug(
@@ -257,6 +428,7 @@ export async function fetchTeamMRs(
           total: allMRs.length,
           page,
           totalPages,
+          links: parsedLinks,
         },
         "GitLabAPI"
       );
@@ -281,8 +453,8 @@ export async function fetchTeamMRs(
           totalPages,
           currentPage: page,
           perPage: per_page,
-          nextPage,
-          prevPage,
+          nextPage: parsedLinks.next || nextPage,
+          prevPage: parsedLinks.prev || prevPage,
           lastRefreshed: new Date().toISOString(),
         },
       };
@@ -337,7 +509,11 @@ export async function fetchDefaultTeamMRs(
   if (!defaultGroupId) {
     throw new Error("GITLAB_GROUP_ID environment variable is not set");
   }
-  return fetchTeamMRs({ groupId: defaultGroupId, ...options });
+  return fetchTeamMRs({
+    groupId: defaultGroupId,
+    state: "opened", // Default to only open MRs
+    ...options,
+  });
 }
 
 /**
@@ -364,7 +540,7 @@ export async function fetchTooOldMRs(
     // Fetch all MRs across all pages from GitLab
     const allMRsResponse = await fetchAllGitLabMRs({
       ...fetchOptions,
-      state: options.state || "all",
+      state: options.state || "opened", // Default to only open MRs
       include_subgroups, // Explicitly pass include_subgroups parameter
     });
 
@@ -438,7 +614,7 @@ export async function fetchNotUpdatedMRs(
     // Fetch all MRs across all pages from GitLab
     const allMRsResponse = await fetchAllGitLabMRs({
       ...fetchOptions,
-      state: options.state || "all",
+      state: options.state || "opened", // Default to only open MRs
       include_subgroups, // Explicitly pass include_subgroups parameter
     });
 
@@ -514,7 +690,7 @@ export async function fetchPendingReviewMRs(
     // Fetch all MRs across all pages from GitLab
     const allMRsResponse = await fetchAllGitLabMRs({
       ...fetchOptions,
-      state: options.state || "all",
+      state: options.state || "opened", // Default to only open MRs
       include_subgroups, // Explicitly pass include_subgroups parameter
     });
 
@@ -582,7 +758,7 @@ async function fetchAllGitLabMRs(
 ): Promise<{ items: GitLabMR[]; totalItems: number; totalPages: number }> {
   const {
     groupId = process.env.GITLAB_GROUP_ID,
-    state = "all",
+    state = "opened", // Default to only open MRs
     include_subgroups = true, // Default to true to include subgroups
   } = options;
 
@@ -604,6 +780,7 @@ async function fetchAllGitLabMRs(
     ...options,
     page: 1,
     per_page,
+    state, // Ensure consistent state parameter
     include_subgroups, // Explicitly set include_subgroups
   });
 
@@ -621,35 +798,38 @@ async function fetchAllGitLabMRs(
   }
 
   // Prepare requests for all other pages
+  const allItems = [...firstPageResponse.items];
   const totalPages = firstPageResponse.metadata.totalPages;
-  const pagePromises = [];
 
-  // Start from page 2 since we already have page 1
-  for (let page = 2; page <= totalPages; page++) {
-    pagePromises.push(
-      fetchTeamMRs({
-        ...options,
-        page,
-        per_page,
-        include_subgroups, // Explicitly set include_subgroups
-      })
-    );
+  // Fetch all remaining pages sequentially to ensure reliable pagination
+  let currentPage = 2;
+
+  while (currentPage <= totalPages) {
+    const pageResponse = await fetchTeamMRs({
+      ...options,
+      page: currentPage,
+      per_page,
+      state, // Ensure consistent state parameter
+      include_subgroups, // Explicitly set include_subgroups
+    });
+
+    // Add the items from this page
+    allItems.push(...pageResponse.items);
+
+    // If there's no next page in the metadata, break the loop
+    if (!pageResponse.metadata.nextPage) {
+      break;
+    }
+
+    currentPage++;
   }
-
-  // Execute all requests in parallel
-  const pageResponses = await Promise.all(pagePromises);
-
-  // Combine all items
-  const allItems = [
-    ...firstPageResponse.items,
-    ...pageResponses.flatMap((response) => response.items),
-  ];
 
   logger.info(
     "Fetched all GitLab MRs",
     {
       totalPages,
       totalItems: allItems.length,
+      fetchedPages: currentPage,
     },
     "GitLabAPI"
   );

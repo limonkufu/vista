@@ -160,6 +160,46 @@
 - [ ] User preferences
 - [ ] Export functionality
 
+## Quality of Life Improvements
+
+### Enhanced Information Display
+
+- [x] MR Age Display
+  - [x] Show "Created X days/months ago" instead of just the date
+  - [x] Provides more immediate context on MR age
+
+- [x] Time Since Last Update
+  - [x] Display "Updated X days/months ago" format
+  - [x] Makes it easier to identify stale MRs at a glance
+
+### Filtering & Grouping
+
+- [x] MRFilters Component
+  - [x] Filter by Project
+  - [x] Filter by Author
+  - [x] Filter by Assignee
+  - [x] Filter by Reviewer
+  - [x] Reset filters functionality
+
+- [x] Group By Functionality
+  - [x] Group by Author
+  - [x] Group by Assignee
+  - [x] Maintains counts and details for each group
+
+### User Management
+
+- [x] User Selection by Group
+  - [x] API endpoint to fetch users by GitLab group name
+  - [x] UserSelector component for easy team switching
+  - [x] Secure caching of user data
+
+### Guidance Information
+
+- [x] MRGuidance Component
+  - [x] Shows descriptive text explaining each MR test
+  - [x] Includes current threshold values
+  - [x] Provides suggestions for resolving issues
+
 <!-- Priority Legend -->
 <!-- [P0] Critical path -->
 <!-- [P1] Important but can ship without -->

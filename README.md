@@ -12,6 +12,11 @@ A dashboard for monitoring GitLab merge requests, focusing on team hygiene metri
 - Responsive design with mobile support
 - Real-time data with caching
 - Secure API endpoints with rate limiting
+- Time-based display for MR age and last update time ("Created 32 days ago", "Updated 18 days ago")
+- Advanced filtering options (by project, author, assignee, reviewer)
+- Grouping functionality (by author or assignee)
+- Team selection by GitLab group name
+- Helpful guidance and suggestions below each MR category
 
 ## Tech Stack
 
@@ -156,6 +161,19 @@ Returns MRs not updated in 14 days.
 #### GET /api/mrs/pending-review
 
 Returns MRs pending review for more than 7 days.
+
+#### GET /api/users
+
+Returns the current team user IDs.
+
+#### GET /api/users?group={groupName}
+
+Fetches users from a specific GitLab group.
+
+Params:
+
+- `group`: The name of the GitLab group to fetch users from
+- `refresh`: (Optional) Set to any value to bypass cache
 
 ### Authentication
 
