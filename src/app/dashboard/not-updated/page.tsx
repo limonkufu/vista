@@ -15,6 +15,7 @@ export default function NotUpdatedMRsPage() {
     fetchData,
     refreshData,
     handleFilter,
+    currentPage,
   } = useMRData({
     endpoint: "not-updated",
     defaultThreshold: 14,
@@ -40,11 +41,12 @@ export default function NotUpdatedMRsPage() {
           data?.metadata ?? {
             threshold: 14,
             lastRefreshed: new Date().toISOString(),
-            currentPage: 1,
+            currentPage: currentPage || 1,
             totalPages: 1,
             perPage: 25,
           }
         }
+        currentPage={currentPage}
         groupBy={groupBy}
         onFilter={handleFilter}
         onPageChange={(page) => fetchData(page)}

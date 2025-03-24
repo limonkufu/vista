@@ -15,6 +15,7 @@ export default function TooOldMRsPage() {
     fetchData,
     refreshData,
     handleFilter,
+    currentPage,
   } = useMRData({
     endpoint: "too-old",
     defaultThreshold: 28,
@@ -40,11 +41,12 @@ export default function TooOldMRsPage() {
           data?.metadata ?? {
             threshold: 28,
             lastRefreshed: new Date().toISOString(),
-            currentPage: 1,
+            currentPage: currentPage || 1,
             totalPages: 1,
             perPage: 25,
           }
         }
+        currentPage={currentPage}
         groupBy={groupBy}
         onFilter={handleFilter}
         onPageChange={(page) => fetchData(page)}

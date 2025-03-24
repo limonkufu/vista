@@ -5,6 +5,7 @@ import { fetchAPI } from "@/lib/api";
 import { GitLabMR } from "@/lib/gitlab";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
+import { clientCache, getMRCacheKey } from "@/lib/clientCache";
 
 interface MRResponse {
   items: GitLabMR[];
@@ -30,13 +31,35 @@ export function useMRData({ endpoint, defaultThreshold }: UseMRDataProps) {
   );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>();
+  const [currentPage, setCurrentPage] = useState(1);
 
   const fetchData = useCallback(
     async (page = 1, refresh = false) => {
+      // Update current page
+      setCurrentPage(page);
+
+      // Check cache first (unless forced refresh)
+      if (!refresh) {
+        const cacheKey = getMRCacheKey(endpoint, page);
+        const cachedData = clientCache.get<MRResponse>(cacheKey);
+
+        if (cachedData) {
+          logger.info(
+            `Using cached data for ${endpoint} MRs, page ${page}`,
+            {},
+            "Dashboard"
+          );
+          setData(cachedData);
+          setFilteredItems(cachedData.items);
+          return;
+        }
+      }
+
       setIsLoading(true);
       setError(undefined);
+
       try {
-        logger.info(`Fetching ${endpoint} MRs`, { page }, "Dashboard");
+        logger.info(`Fetching ${endpoint} MRs`, { page, refresh }, "Dashboard");
         const response = await fetchAPI(
           `/api/mrs/${endpoint}?page=${page}${refresh ? "&refresh=true" : ""}`
         );
@@ -49,6 +72,11 @@ export function useMRData({ endpoint, defaultThreshold }: UseMRDataProps) {
         }
 
         const responseData = await response.json();
+
+        // Store in cache
+        const cacheKey = getMRCacheKey(endpoint, page);
+        clientCache.set(cacheKey, responseData);
+
         setData(responseData);
         setFilteredItems(responseData.items);
         logger.debug(
@@ -73,12 +101,18 @@ export function useMRData({ endpoint, defaultThreshold }: UseMRDataProps) {
   );
 
   const refreshData = useCallback(() => {
-    fetchData(1, true);
+    // Clear cache for this endpoint (all pages)
+    for (let i = 1; i <= 10; i++) {
+      // Assume max 10 pages
+      clientCache.remove(getMRCacheKey(endpoint, i));
+    }
+
+    fetchData(currentPage, true);
     toast.info("Refreshing data", {
       description: "Fetching latest merge requests...",
       duration: 2000,
     });
-  }, [fetchData]);
+  }, [fetchData, endpoint, currentPage]);
 
   const handleFilter = useCallback(
     (
@@ -91,7 +125,7 @@ export function useMRData({ endpoint, defaultThreshold }: UseMRDataProps) {
     []
   );
 
-  // Initial fetch on mount
+  // Initial fetch on mount - use cached data if available
   useEffect(() => {
     fetchData(1);
   }, [fetchData]);
@@ -105,5 +139,6 @@ export function useMRData({ endpoint, defaultThreshold }: UseMRDataProps) {
     fetchData,
     refreshData,
     handleFilter,
+    currentPage,
   };
 }

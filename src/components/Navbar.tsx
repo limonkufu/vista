@@ -6,6 +6,16 @@ import { cn } from "@/lib/utils";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { UserSelector } from "@/components/UserSelector/UserSelector";
 import { ThresholdSettings } from "@/components/ThresholdSettings/ThresholdSettings";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Settings, Trash } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { clientCache } from "@/lib/clientCache";
+import { toast } from "sonner";
 
 export function Navbar() {
   const pathname = usePathname();
@@ -48,6 +58,25 @@ export function Navbar() {
           <UserSelector />
           <ThresholdSettings />
           <ThemeSwitcher />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon">
+                <Settings className="h-4 w-4" />
+                <span className="sr-only">Settings</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => {
+                  clientCache.clear();
+                  toast.success("Cache cleared successfully");
+                }}
+              >
+                <Trash className="mr-2 h-4 w-4" />
+                <span>Clear cache</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </header>

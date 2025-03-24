@@ -15,6 +15,7 @@ export default function PendingReviewMRsPage() {
     fetchData,
     refreshData,
     handleFilter,
+    currentPage,
   } = useMRData({
     endpoint: "pending-review",
     defaultThreshold: 7,
@@ -40,11 +41,12 @@ export default function PendingReviewMRsPage() {
           data?.metadata ?? {
             threshold: 7,
             lastRefreshed: new Date().toISOString(),
-            currentPage: 1,
+            currentPage: currentPage || 1,
             totalPages: 1,
             perPage: 25,
           }
         }
+        currentPage={currentPage}
         groupBy={groupBy}
         onFilter={handleFilter}
         onPageChange={(page) => fetchData(page)}

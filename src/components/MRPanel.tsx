@@ -27,6 +27,7 @@ interface MRPanelProps {
     groupBy?: "none" | "author" | "assignee" | null
   ) => void;
   onPageChange: (page: number) => void;
+  currentPage?: number;
   onRefresh: () => void;
 }
 
@@ -75,11 +76,25 @@ export function MRPanel({
   onFilter,
   onPageChange,
   onRefresh,
+  currentPage,
 }: MRPanelProps) {
   return (
     <div className="container py-8 space-y-8">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">{title}</h1>
+        <div>
+          <h1 className="text-3xl font-bold">{title}</h1>
+          {!isLoading && metadata.lastRefreshed && (
+            <div className="text-xs text-muted-foreground mt-1">
+              Last refreshed:{" "}
+              {new Date(metadata.lastRefreshed).toLocaleTimeString()}
+              {currentPage && metadata.currentPage === currentPage && (
+                <span className="ml-2 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-1.5 py-0.5 rounded-full text-[10px]">
+                  Cached
+                </span>
+              )}
+            </div>
+          )}
+        </div>
         <Button onClick={onRefresh} disabled={isLoading}>
           {isLoading ? (
             <>
