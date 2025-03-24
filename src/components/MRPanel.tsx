@@ -110,6 +110,10 @@ export function MRPanel({
         </Button>
       </div>
 
+      <div className="mt-4">
+        <MRGuidance type={type} threshold={metadata.threshold} />
+      </div>
+      
       <div className="border rounded-lg shadow-sm p-4 bg-background space-y-4">
         {items && <MRFilters items={items} onFilter={onFilter} />}
 
@@ -151,10 +155,6 @@ export function MRPanel({
             onRefresh={onRefresh}
           />
         )}
-
-        <div className="mt-4">
-          <MRGuidance type={type} threshold={metadata.threshold} />
-        </div>
       </div>
     </div>
   );

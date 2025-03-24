@@ -12,17 +12,17 @@ export function MRGuidance({ type, threshold }: MRGuidanceProps) {
 
   switch (type) {
     case "too-old":
-      title = "Test that MRs assigned within the team are not too old";
-      description = `This test fails if a MR assigned within the team was created too long ago -- currently ${threshold} days. Get the MR merged or close it.`;
+      title = "MRs assigned within the team are not too old";
+      description = `This table is populated if an MR assigned within the team was created too long ago -- currently ${threshold} days. Get the MR merged or close it.`;
       break;
     case "not-updated":
-      title = "Test that MRs assigned within the team are being worked on";
-      description = `This test fails if an MR assigned within the team has not been updated in a while -- currently ${threshold} days. Either the assignee needs to continue working on the MR in order to get it closed out, or the reviewer needs to get that review done.`;
+      title = "MRs assigned within the team are being worked on";
+      description = `This table is populated if an MR assigned within the team has not been updated in a while -- currently ${threshold} days. Either the assignee needs to continue working on the MR in order to get it closed out, or the reviewer needs to get that review done.`;
       break;
     case "pending-review":
       title =
-        "Test that MRs assigned to be reviewed within the team are being reviewed";
-      description = `This test fails if an MR assigned for review within the team has not been updated in a while -- currently ${threshold} days. The reviewer needs to get that review done.`;
+        "MRs assigned to be reviewed within the team are being reviewed";
+      description = `This table is populated if an MR assigned for review within the team has not been updated in a while -- currently ${threshold} days. The reviewer needs to get that review done.`;
       break;
   }
 

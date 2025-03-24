@@ -40,11 +40,13 @@ export async function GET(request: NextRequest) {
     );
 
     // Fetch MRs from GitLab API
-    const response = await fetchPendingReviewMRs({
-      page,
-      per_page,
-      threshold,
-    });
+const response = await fetchPendingReviewMRs({
+  groupId: process.env.GITLAB_GROUP_ID || "", // Add the required groupId property
+  page,
+  per_page,
+  threshold,
+});
+
 
     // Format the response
     const apiResponse = {

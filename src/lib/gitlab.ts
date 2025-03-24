@@ -1,5 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import { logger, measurePerformance } from './logger';
+import { gitlabApiCache } from './gitlabCache';
 
 /**
  * GitLab API base URL
@@ -107,6 +108,8 @@ export interface FetchTeamMRsOptions {
   threshold?: number;
   /** Whether to include MRs from subgroups */
   include_subgroups?: boolean;
+  /** Skip cache and fetch fresh data */
+  skipCache?: boolean;
 }
 
 /**
@@ -322,12 +325,9 @@ export function isTeamRelevantMR(mr: GitLabMR): boolean {
 }
 
 /**
- * Fetches merge requests for team members from GitLab API
+ * Fetches merge requests for team members from GitLab API with caching
  * @param options - Options for the API call including groupId, pagination, and state
  * @returns Promise with GitLab MRs and pagination metadata
- *
- * By default, this function will include merge requests from subgroups.
- * Set options.include_subgroups = false to disable this behavior.
  */
 export async function fetchTeamMRs(
   options: FetchTeamMRsOptions
@@ -356,6 +356,7 @@ export async function fetchTeamMRs(
     state = "opened", // Default to only open MRs
     maxRetries = 3,
     include_subgroups = true,
+    skipCache = false, // New parameter to allow skipping cache
   } = options;
 
   if (!groupId) {
@@ -367,14 +368,57 @@ export async function fetchTeamMRs(
     );
   }
 
+  // Generate cache key based on options
+  const cacheKey = gitlabApiCache.generateKey(`groups/${groupId}/merge_requests`, {
+    state,
+    page,
+    per_page,
+    include_subgroups: include_subgroups ? 'true' : 'false',
+  });
+
+  // Try to get from cache if not explicitly skipping
+  if (!skipCache) {
+    const cachedResponse = gitlabApiCache.get(cacheKey);
+    if (cachedResponse) {
+      logger.info(
+        "Using cached GitLab API response",
+        { groupId, page, per_page, cacheKey },
+        "GitLabAPI"
+      );
+      
+      // Process cached data
+      const teamMRs = cachedResponse.data.filter(isTeamRelevantMR);
+      
+      // Parse pagination info from cached headers
+      const headers = cachedResponse.headers;
+      const totalItems = parseInt(String(headers["x-total"] || "0"), 10);
+      const totalPages = parseInt(String(headers["x-total-pages"] || "0"), 10);
+      const nextPage = parseInt(String(headers["x-next-page"] || "0"), 10) || undefined;
+      const prevPage = parseInt(String(headers["x-prev-page"] || "0"), 10) || undefined;
+      
+      return {
+        items: teamMRs,
+        metadata: {
+          totalItems,
+          totalPages,
+          currentPage: page,
+          perPage: per_page,
+          nextPage,
+          prevPage,
+          lastRefreshed: new Date().toISOString(),
+        },
+      };
+    }
+  }
+
   let retries = 0;
 
   // Retry logic for API calls
   const fetchWithRetry = async (): Promise<GitLabMRsResponse> => {
     try {
       logger.info(
-        "Fetching GitLab MRs",
-        { groupId, page, per_page, state, include_subgroups },
+        "Fetching GitLab MRs (cache miss or skipped)",
+        { groupId, page, per_page, state, include_subgroups, skipCache },
         "GitLabAPI"
       );
 
@@ -392,6 +436,20 @@ export async function fetchTeamMRs(
           },
         })
       );
+
+      // Store response in cache (only if not skipping cache)
+      if (!skipCache) {
+        // Extract important headers for caching
+        const headersToCache: Record<string, string> = {
+          "x-total": String(response.headers["x-total"] || "0"),
+          "x-total-pages": String(response.headers["x-total-pages"] || "0"),
+          "x-next-page": String(response.headers["x-next-page"] || "0"),
+          "x-prev-page": String(response.headers["x-prev-page"] || "0"),
+          link: String(response.headers.link || response.headers.Link || ""),
+        };
+        
+        gitlabApiCache.set(cacheKey, response.data, headersToCache);
+      }
 
       const headers = response.headers;
       const totalItems = parseInt(headers["x-total"] || "0", 10);
@@ -749,7 +807,7 @@ export async function fetchPendingReviewMRs(
 }
 
 /**
- * Fetches all pages of merge requests from GitLab API
+ * Fetches all pages of merge requests from GitLab API with improved caching
  * @param options - Base options for fetching
  * @returns Promise with all merge requests across all pages
  */
@@ -760,6 +818,7 @@ async function fetchAllGitLabMRs(
     groupId = process.env.GITLAB_GROUP_ID,
     state = "opened", // Default to only open MRs
     include_subgroups = true, // Default to true to include subgroups
+    skipCache = false, // Add option to skip cache
   } = options;
 
   // Always use maximum per_page to minimize number of requests
@@ -771,17 +830,97 @@ async function fetchAllGitLabMRs(
       groupId,
       state,
       include_subgroups,
+      skipCache,
     },
     "GitLabAPI"
   );
 
-  // Fetch first page to get pagination info
+  // Check if we have a complete set of data in cache already
+  let cachedItemsByPage: Map<number, GitLabMR[]> | null = null;
+  let totalItemsFromCache = 0;
+  let totalPagesFromCache = 0;
+  
+  // Only attempt to use cache if not explicitly skipping
+  if (!skipCache) {
+    cachedItemsByPage = new Map();
+    
+    // Try to determine the total pages from the cache first
+    // We'll look for any cached page to get the total info
+    // Try page 1 first as it's most likely to be cached
+    const page1CacheKey = gitlabApiCache.generateKey(`groups/${groupId}/merge_requests`, {
+      state,
+      page: 1,
+      per_page,
+      include_subgroups: include_subgroups ? 'true' : 'false',
+    });
+    
+    const page1Cache = gitlabApiCache.get(page1CacheKey);
+    
+    if (page1Cache) {
+      totalItemsFromCache = parseInt(String(page1Cache.headers["x-total"] || "0"), 10);
+      totalPagesFromCache = parseInt(String(page1Cache.headers["x-total-pages"] || "0"), 10);
+      
+      // If we have the total pages info, try to get all cached pages
+      if (totalPagesFromCache > 0) {
+        let hasAllCachedPages = true;
+        
+        for (let page = 1; page <= totalPagesFromCache; page++) {
+          const pageCacheKey = gitlabApiCache.generateKey(`groups/${groupId}/merge_requests`, {
+            state,
+            page,
+            per_page,
+            include_subgroups: include_subgroups ? 'true' : 'false',
+          });
+          
+          const pageCache = gitlabApiCache.get(pageCacheKey);
+          
+          if (pageCache) {
+            cachedItemsByPage.set(page, pageCache.data);
+          } else {
+            hasAllCachedPages = false;
+            break;
+          }
+        }
+        
+        // If we have all the pages in cache, we can return early
+        if (hasAllCachedPages) {
+          logger.info(
+            "Found all GitLab MR pages in cache",
+            {
+              totalPages: totalPagesFromCache,
+              totalItems: totalItemsFromCache,
+            },
+            "GitLabAPI"
+          );
+          
+          // Combine all items from all pages
+          let allItems: GitLabMR[] = [];
+          for (let page = 1; page <= totalPagesFromCache; page++) {
+            const pageItems = cachedItemsByPage.get(page) || [];
+            allItems = allItems.concat(pageItems);
+          }
+          
+          // Filter for team-relevant MRs
+          const teamMRs = allItems.filter(isTeamRelevantMR);
+          
+          return {
+            items: teamMRs,
+            totalItems: totalItemsFromCache,
+            totalPages: totalPagesFromCache,
+          };
+        }
+      }
+    }
+  }
+
+  // If we can't use the cache completely, fetch the first page to get pagination info
   const firstPageResponse = await fetchTeamMRs({
     ...options,
     page: 1,
     per_page,
     state, // Ensure consistent state parameter
     include_subgroups, // Explicitly set include_subgroups
+    skipCache, // Pass the skip cache option
   });
 
   // If only one page exists or no items, return early
@@ -797,31 +936,52 @@ async function fetchAllGitLabMRs(
     };
   }
 
-  // Prepare requests for all other pages
+  // Prepare for fetching all pages
   const allItems = [...firstPageResponse.items];
   const totalPages = firstPageResponse.metadata.totalPages;
 
-  // Fetch all remaining pages sequentially to ensure reliable pagination
-  let currentPage = 2;
-
-  while (currentPage <= totalPages) {
-    const pageResponse = await fetchTeamMRs({
-      ...options,
-      page: currentPage,
-      per_page,
-      state, // Ensure consistent state parameter
-      include_subgroups, // Explicitly set include_subgroups
-    });
-
-    // Add the items from this page
-    allItems.push(...pageResponse.items);
-
-    // If there's no next page in the metadata, break the loop
-    if (!pageResponse.metadata.nextPage) {
-      break;
+  // Fetch all remaining pages, using cache where possible
+  const pagesToFetch: number[] = [];
+  for (let page = 2; page <= totalPages; page++) {
+    // If we have this page in our cache map, use it
+    if (cachedItemsByPage?.has(page)) {
+      const pageItems = cachedItemsByPage.get(page) || [];
+      allItems.push(...pageItems.filter(isTeamRelevantMR));
+    } else {
+      // Otherwise, mark for fetching
+      pagesToFetch.push(page);
     }
+  }
 
-    currentPage++;
+  // Now fetch all the pages we couldn't get from cache
+  if (pagesToFetch.length > 0) {
+    logger.info(
+      "Fetching remaining GitLab MR pages",
+      {
+        cachedPages: totalPages - pagesToFetch.length,
+        pagesToFetch: pagesToFetch.length,
+      },
+      "GitLabAPI"
+    );
+
+    // Use Promise.all to fetch remaining pages in parallel
+    const pagePromises = pagesToFetch.map(page => 
+      fetchTeamMRs({
+        ...options,
+        page,
+        per_page,
+        state,
+        include_subgroups,
+        skipCache,
+      })
+    );
+
+    const pageResponses = await Promise.all(pagePromises);
+    
+    // Add all items from fetched pages
+    for (const pageResponse of pageResponses) {
+      allItems.push(...pageResponse.items);
+    }
   }
 
   logger.info(
@@ -829,7 +989,8 @@ async function fetchAllGitLabMRs(
     {
       totalPages,
       totalItems: allItems.length,
-      fetchedPages: currentPage,
+      cachedPages: totalPages - pagesToFetch.length,
+      fetchedPages: pagesToFetch.length,
     },
     "GitLabAPI"
   );
@@ -839,4 +1000,4 @@ async function fetchAllGitLabMRs(
     totalItems: firstPageResponse.metadata.totalItems || allItems.length,
     totalPages,
   };
-} 
+}

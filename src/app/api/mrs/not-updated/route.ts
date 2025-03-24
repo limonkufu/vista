@@ -40,11 +40,12 @@ export async function GET(request: NextRequest) {
     );
 
     // Fetch MRs from GitLab API
-    const response = await fetchNotUpdatedMRs({
-      page,
-      per_page,
-      threshold,
-    });
+const response = await fetchNotUpdatedMRs({
+  groupId: process.env.GITLAB_GROUP_ID || "", // Add the required groupId property
+  page,
+  per_page,
+  threshold,
+});
 
     // Format the response
     const apiResponse = {
