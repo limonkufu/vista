@@ -23,7 +23,7 @@ interface MRResponseData {
 }
 
 // Cache TTL in milliseconds (1 minute)
-const CACHE_TTL = 60 * 1000;
+const CACHE_TTL = 60 * 1000 * 60;
 
 // Global cache storage (will persist between page navigations)
 const globalCache: Record<string, CachedData<any>> = {};

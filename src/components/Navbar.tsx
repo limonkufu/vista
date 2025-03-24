@@ -12,7 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Settings, Trash } from "lucide-react";
+import { Trash, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { clientCache } from "@/lib/clientCache";
 import { toast } from "sonner";
@@ -60,9 +60,9 @@ export function Navbar() {
           <ThemeSwitcher />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon">
-                <Settings className="h-4 w-4" />
-                <span className="sr-only">Settings</span>
+              <Button variant="outline" size="icon" title="Cache options">
+                <Database className="h-4 w-4" />
+                <span className="sr-only">Cache options</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
