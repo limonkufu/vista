@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProviderClient } from "@/components/ThemeProviderClient";
-import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { ProgressBarWrapper } from "@/components/ProgressBarWrapper";
 import { Toaster } from "sonner";
+import { Navbar } from "@/components/Navbar";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -24,10 +24,10 @@ export default function RootLayout({
         <ThemeProviderClient>
           <ProgressBarWrapper />
           <Toaster richColors position="top-right" />
-          <div className="fixed top-4 right-4 z-50">
-            <ThemeSwitcher />
+          <div className="min-h-screen flex flex-col">
+            <Navbar />
+            <main className="flex-1">{children}</main>
           </div>
-          {children}
         </ThemeProviderClient>
       </body>
     </html>
