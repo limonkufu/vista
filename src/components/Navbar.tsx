@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { UserSelector } from "@/components/UserSelector/UserSelector";
 import { ThresholdSettings } from "@/components/ThresholdSettings/ThresholdSettings";
+import { LabsMenu } from "@/components/LabsMenu";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,8 +26,12 @@ import { Button } from "@/components/ui/button";
 import { clientCache } from "@/lib/clientCache";
 import { toast } from "sonner";
 
+// Type definition to add static method to the Navbar component
+interface NavbarComponent extends React.FC {
+  UserTools: React.FC;
+}
 
-export function Navbar() {
+export const Navbar: NavbarComponent = function Navbar() {
   const pathname = usePathname();
 
   const navItems = [
@@ -63,133 +68,141 @@ export function Navbar() {
             ))}
           </ul>
         </nav>
-        <div className="flex items-center gap-2">
-          <UserSelector />
-          <ThresholdSettings />
-          <ThemeSwitcher />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" title="Cache options">
-                <Database className="h-4 w-4" />
-                <span className="sr-only">Cache options</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onClick={async () => {
-                  try {
-                    const response = await fetch("/api/cache", {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({ action: "clear_all" }),
-                    });
-
-                    if (response.ok) {
-                      toast.success("All caches cleared successfully");
-                    } else {
-                      toast.error("Failed to clear caches");
-                    }
-                  } catch (error) {
-                    toast.error("Error clearing caches");
-                    console.error(error);
-                  }
-                }}
-              >
-                <Trash className="mr-2 h-4 w-4" />
-                <span>Clear all caches</span>
-              </DropdownMenuItem>
-
-              <DropdownMenuItem
-                onClick={async () => {
-                  try {
-                    const response = await fetch("/api/cache", {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({ action: "clear_gitlab_api" }),
-                    });
-
-                    if (response.ok) {
-                      toast.success("GitLab API cache cleared successfully");
-                    } else {
-                      toast.error("Failed to clear GitLab API cache");
-                    }
-                  } catch (error) {
-                    toast.error("Error clearing GitLab API cache");
-                    console.error(error);
-                  }
-                }}
-              >
-                <GitMerge className="mr-2 h-4 w-4" />
-                <span>Clear GitLab API cache</span>
-              </DropdownMenuItem>
-
-              <DropdownMenuItem
-                onClick={async () => {
-                  try {
-                    const response = await fetch("/api/cache", {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({ action: "clear_api_responses" }),
-                    });
-
-                    if (response.ok) {
-                      toast.success("API response caches cleared successfully");
-                    } else {
-                      toast.error("Failed to clear API response caches");
-                    }
-                  } catch (error) {
-                    toast.error("Error clearing API response caches");
-                    console.error(error);
-                  }
-                }}
-              >
-                <Server className="mr-2 h-4 w-4" />
-                <span>Clear API response caches</span>
-              </DropdownMenuItem>
-
-              <DropdownMenuItem
-                onClick={() => {
-                  clientCache.clear();
-                  toast.success("Client cache cleared successfully");
-                }}
-              >
-                <Smartphone className="mr-2 h-4 w-4" />
-                <span>Clear client cache</span>
-              </DropdownMenuItem>
-
-              <DropdownMenuSeparator />
-
-              <DropdownMenuItem
-                onClick={async () => {
-                  try {
-                    const response = await fetch("/api/cache");
-
-                    if (response.ok) {
-                      const data = await response.json();
-                      console.log("Cache Statistics:", data.stats);
-                      toast.info("Cache statistics logged to console");
-                    } else {
-                      toast.error("Failed to fetch cache statistics");
-                    }
-                  } catch (error) {
-                    toast.error("Error fetching cache statistics");
-                    console.error(error);
-                  }
-                }}
-              >
-                <BarChart2 className="mr-2 h-4 w-4" />
-                <span>View cache statistics</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        <Navbar.UserTools />
       </div>
     </header>
   );
-}
+};
+
+// Static method to render just the user tools portion
+Navbar.UserTools = function NavbarUserTools() {
+  return (
+    <div className="flex items-center gap-2">
+      <UserSelector />
+      <ThresholdSettings />
+      <ThemeSwitcher />
+      <LabsMenu />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="icon" title="Cache options">
+            <Database className="h-4 w-4" />
+            <span className="sr-only">Cache options</span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            onClick={async () => {
+              try {
+                const response = await fetch("/api/cache", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ action: "clear_all" }),
+                });
+
+                if (response.ok) {
+                  toast.success("All caches cleared successfully");
+                } else {
+                  toast.error("Failed to clear caches");
+                }
+              } catch (error) {
+                toast.error("Error clearing caches");
+                console.error(error);
+              }
+            }}
+          >
+            <Trash className="mr-2 h-4 w-4" />
+            <span>Clear all caches</span>
+          </DropdownMenuItem>
+
+          <DropdownMenuItem
+            onClick={async () => {
+              try {
+                const response = await fetch("/api/cache", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ action: "clear_gitlab_api" }),
+                });
+
+                if (response.ok) {
+                  toast.success("GitLab API cache cleared successfully");
+                } else {
+                  toast.error("Failed to clear GitLab API cache");
+                }
+              } catch (error) {
+                toast.error("Error clearing GitLab API cache");
+                console.error(error);
+              }
+            }}
+          >
+            <GitMerge className="mr-2 h-4 w-4" />
+            <span>Clear GitLab API cache</span>
+          </DropdownMenuItem>
+
+          <DropdownMenuItem
+            onClick={async () => {
+              try {
+                const response = await fetch("/api/cache", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ action: "clear_api_responses" }),
+                });
+
+                if (response.ok) {
+                  toast.success("API response caches cleared successfully");
+                } else {
+                  toast.error("Failed to clear API response caches");
+                }
+              } catch (error) {
+                toast.error("Error clearing API response caches");
+                console.error(error);
+              }
+            }}
+          >
+            <Server className="mr-2 h-4 w-4" />
+            <span>Clear API response caches</span>
+          </DropdownMenuItem>
+
+          <DropdownMenuItem
+            onClick={() => {
+              clientCache.clear();
+              toast.success("Client cache cleared successfully");
+            }}
+          >
+            <Smartphone className="mr-2 h-4 w-4" />
+            <span>Clear client cache</span>
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+
+          <DropdownMenuItem
+            onClick={async () => {
+              try {
+                const response = await fetch("/api/cache");
+
+                if (response.ok) {
+                  const data = await response.json();
+                  console.log("Cache Statistics:", data.stats);
+                  toast.info("Cache statistics logged to console");
+                } else {
+                  toast.error("Failed to fetch cache statistics");
+                }
+              } catch (error) {
+                toast.error("Error fetching cache statistics");
+                console.error(error);
+              }
+            }}
+          >
+            <BarChart2 className="mr-2 h-4 w-4" />
+            <span>View cache statistics</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+};

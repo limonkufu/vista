@@ -4,7 +4,7 @@ import "./globals.css";
 import { ThemeProviderClient } from "@/components/ThemeProviderClient";
 import { ProgressBarWrapper } from "@/components/ProgressBarWrapper";
 import { Toaster } from "sonner";
-import { Navbar } from "@/components/Navbar";
+import { LayoutProvider } from "@/contexts/LayoutContext";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -22,12 +22,11 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <ThemeProviderClient>
-          <ProgressBarWrapper />
-          <Toaster richColors position="top-right" />
-          <div className="min-h-screen flex flex-col">
-            <Navbar />
-            <main className="flex-1">{children}</main>
-          </div>
+          <LayoutProvider>
+            <ProgressBarWrapper />
+            <Toaster richColors position="top-right" />
+            {children}
+          </LayoutProvider>
         </ThemeProviderClient>
       </body>
     </html>
