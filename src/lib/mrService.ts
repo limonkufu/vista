@@ -10,22 +10,31 @@ import {
   GitLabMRWithJira,
   JiraTicketWithMRs,
   JiraQueryOptions,
-} from "../types/jira";
+} from "@/types/Jira";
 import { logger } from "./logger";
 
 /**
  * Service for combining GitLab MR and Jira ticket data
  */
 export class MRService {
+  private readonly groupId: string;
+
+  constructor() {
+    const groupId = process.env.GITLAB_GROUP_ID;
+    if (!groupId) {
+      throw new Error("GITLAB_GROUP_ID environment variable is not set");
+    }
+    this.groupId = groupId;
+  }
+
   /**
    * Get MRs with associated Jira tickets for PO view
    */
-  async getPOViewMRs(
-    options: JiraQueryOptions = {}
-  ): Promise<JiraTicketWithMRs[]> {
+  async getPOViewMRs(): Promise<JiraTicketWithMRs[]> {
     try {
       // Get all MRs from GitLab
       const mrsResponse = await fetchTeamMRs({
+        groupId: this.groupId,
         state: "opened",
         include_subgroups: true,
       });
@@ -60,7 +69,7 @@ export class MRService {
           const mrWithJira: GitLabMRWithJira = {
             ...mr,
             jiraTicket: ticket,
-            jiraTicketKey: key,
+            jiraTicketKey: key || undefined,
           };
 
           if (!ticketGroups.has(key)) {
@@ -78,8 +87,8 @@ export class MRService {
           mrs,
           totalMRs: mrs.length,
           openMRs: mrs.filter((mr) => mr.state === "opened").length,
-          overdueMRs: mrs.filter((mr) => this.isOverdue(mr)).length,
-          stalledMRs: mrs.filter((mr) => this.isStalled(mr)).length,
+          overdueMRs: mrs.filter((mr) => this.isOverdue(mr as GitLabMR)).length,
+          stalledMRs: mrs.filter((mr) => this.isStalled(mr as GitLabMR)).length,
         };
       });
     } catch (error) {
@@ -95,6 +104,7 @@ export class MRService {
     try {
       // Get MRs where the user is a reviewer
       const mrsResponse = await fetchTeamMRs({
+        groupId: this.groupId,
         state: "opened",
         include_subgroups: true,
       });
@@ -131,7 +141,7 @@ export class MRService {
         return {
           ...mr,
           jiraTicket: key ? ticketMap.get(key) : undefined,
-          jiraTicketKey: key,
+          jiraTicketKey: key || undefined,
         };
       });
     } catch (error) {
@@ -151,6 +161,7 @@ export class MRService {
     try {
       // Get all MRs
       const mrsResponse = await fetchTeamMRs({
+        groupId: this.groupId,
         state: "opened",
         include_subgroups: true,
       });
@@ -185,7 +196,7 @@ export class MRService {
           const mrWithJira: GitLabMRWithJira = {
             ...mr,
             jiraTicket: ticket,
-            jiraTicketKey: key,
+            jiraTicketKey: key || undefined,
           };
 
           if (!ticketGroups.has(key)) {
@@ -203,8 +214,8 @@ export class MRService {
           mrs,
           totalMRs: mrs.length,
           openMRs: mrs.filter((mr) => mr.state === "opened").length,
-          overdueMRs: mrs.filter((mr) => this.isOverdue(mr)).length,
-          stalledMRs: mrs.filter((mr) => this.isStalled(mr)).length,
+          overdueMRs: mrs.filter((mr) => this.isOverdue(mr as GitLabMR)).length,
+          stalledMRs: mrs.filter((mr) => this.isStalled(mr as GitLabMR)).length,
         };
       });
     } catch (error) {
