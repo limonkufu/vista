@@ -24,7 +24,6 @@ import {
 } from "@/components/ui/dialog";
 import {
   Trash,
-  Database,
   BarChart2,
   GitMerge,
   Server,
@@ -37,6 +36,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { cacheManager } from "@/lib/cacheManager"; // Import cacheManager
 import { ThresholdSettings } from "@/components/ThresholdSettings/ThresholdSettings"; // Keep import for Dialog content
+import { Logo } from "@/components/Logo";
 
 // Type definition remains the same
 interface NavbarComponent extends React.FC {
@@ -52,7 +52,7 @@ export const Navbar: NavbarComponent = function Navbar() {
       <div className="container flex h-14 items-center">
         <div className="mr-4 flex">
           <Link href="/dashboard" className="flex items-center space-x-2">
-            <span className="font-bold">GitLab MR Dashboard</span>
+            <Logo size="sm" />
           </Link>
         </div>
         <nav className="flex-1">

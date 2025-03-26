@@ -11,82 +11,75 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
+    --background: 0 0% 97%; /* #F8F9FA (Light Gray) */
+    --foreground: 220 6% 10%; /* #1C1E21 (Dark Charcoal) */
 
-    /* SKA Observatory Primary Brand Colors */
-    --primary: 0 0% 9%; /* SKA Observatory Blue */
-    --primary-foreground: 0 0% 98%; /* White text on primary */
+    /* Light Mode Colors */
+    --primary: 214 88% 52%; /* #1877F2 (Vibrant Blue) */
+    --primary-foreground: 0 0% 100%;
     
-    /* SKA Observatory Secondary Brand Colors */
-    --secondary: 0 0% 96.1%; /* SKA Observatory Red/Orange */
-    --secondary-foreground: 0 0% 9%; /* White text on secondary */
+    --secondary: 21 100% 64%; /* #FF7E47 (Soft Orange) */
+    --secondary-foreground: 0 0% 100%;
 
-    /* Dark and Light variants */
     --muted: 0 0% 96.1%;
     --muted-foreground: 0 0% 45.1%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
+    --popover-foreground: 220 6% 10%;
 
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
+    --card-foreground: 220 6% 10%;
 
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
+    --border: 220 13% 85%; /* #D1D5DB (Muted Gray) */
+    --input: 220 13% 85%;
 
-    --accent: 0 0% 96.1%; /* SKA Observatory Yellow/Gold accent */
-    --accent-foreground: 0 0% 9%; /* Black text on accent */
+    --accent: 264 88% 60%; /* #703DF5 (Deep Purple) */
+    --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
 
-    --ring: 0 0% 3.9%; /* Match primary for focus rings */
+    --ring: 214 88% 52%;
 
     --radius: 0.5rem;
 
     --chart-1: 12 76% 61%;
-
     --chart-2: 173 58% 39%;
-
     --chart-3: 197 37% 24%;
-
     --chart-4: 43 74% 66%;
-
     --chart-5: 27 87% 67%;
   }
  
   .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
+    --background: 0 0% 7%; /* #121212 (Deep Black) */
+    --foreground: 0 0% 93%; /* #EDEDED (Soft White) */
  
-    /* SKA Observatory Dark Theme Colors */
-    --primary: 0 0% 98%; /* Lighter SKA Observatory Blue for dark mode */
-    --primary-foreground: 0 0% 9%; /* White text on primary */
+    /* Dark Mode Colors */
+    --primary: 208 91% 65%; /* #529FF7 (Bright Cyan-Blue) */
+    --primary-foreground: 0 0% 7%;
     
-    /* SKA Observatory Secondary Brand Colors - adjusted for dark mode */
-    --secondary: 0 0% 14.9%; /* Brighter SKA Observatory Red/Orange for dark mode */
-    --secondary-foreground: 0 0% 98%; /* White text on secondary */
+    --secondary: 14 100% 63%; /* #FF7043 (Fiery Orange) */
+    --secondary-foreground: 0 0% 100%;
  
     --muted: 0 0% 14.9%;
     --muted-foreground: 0 0% 63.9%;
  
-    --popover: 0 0% 3.9%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 0 0% 7%;
+    --popover-foreground: 0 0% 93%;
  
-    --card: 0 0% 3.9%;
-    --card-foreground: 0 0% 98%;
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 93%;
  
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
+    --border: 214 6% 20%; /* #2D2F33 (Dark Gray) */
+    --input: 214 6% 20%;
  
-    --accent: 0 0% 14.9%; /* Brighter SKA Observatory Yellow/Gold for dark mode */
-    --accent-foreground: 0 0% 98%; /* Black text on accent */
+    --accent: 260 100% 65%; /* #8A4FFF (Electric Purple) */
+    --accent-foreground: 0 0% 100%;
  
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
  
-    --ring: 0 0% 83.1%; /* Brighter primary for focus rings in dark mode */
+    --ring: 208 91% 65%;
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;
@@ -101,5 +94,13 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .bg-grid-pattern {
+    background-image: linear-gradient(to right, hsl(var(--border)) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--border)) 1px, transparent 1px);
+    background-size: 24px 24px;
   }
 }

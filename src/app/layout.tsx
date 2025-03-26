@@ -9,8 +9,9 @@ import { LayoutProvider } from "@/contexts/LayoutContext";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "GitLab MRs Dashboard",
-  description: "Monitor and analyze GitLab merge requests for team hygiene",
+  title: "VISTA - Vibe Into Software Tasks & Activities",
+  description:
+    "A context-aware work management dashboard that transforms traditional project tracking into an intuitive, vibe-based experience.",
 };
 
 export default function RootLayout({
