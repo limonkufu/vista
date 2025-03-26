@@ -1,3 +1,4 @@
+// src/components/ThresholdSettings/ThresholdSettings.tsx
 "use client";
 
 import { useState } from "react";
@@ -5,21 +6,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose, // Import DialogClose
+} from "@/components/ui/dialog"; // Use Dialog components
 import { getThresholds, updateThreshold, resetThresholds } from "@/lib/config";
 import { toast } from "sonner";
-import { Settings } from "lucide-react";
+import { logger } from "@/lib/logger";
+
+// Removed props like isOpen, setIsOpen as it's controlled by Dialog
 
 export function ThresholdSettings() {
-  const [isOpen, setIsOpen] = useState(false);
+  // State remains the same
   const [thresholds, setThresholds] = useState(getThresholds());
-
   const [tooOldThreshold, setTooOldThreshold] = useState(
     thresholds.TOO_OLD_THRESHOLD.toString()
   );
@@ -42,10 +43,9 @@ export function ThresholdSettings() {
         isNaN(pendingReviewValue)
       ) {
         toast.error("All values must be valid numbers");
-        return;
+        return false; // Indicate failure
       }
 
-      // Update threshold values
       const tooOldSuccess = updateThreshold("TOO_OLD_THRESHOLD", tooOldValue);
       const notUpdatedSuccess = updateThreshold(
         "NOT_UPDATED_THRESHOLD",
@@ -58,20 +58,26 @@ export function ThresholdSettings() {
 
       if (!tooOldSuccess || !notUpdatedSuccess || !pendingReviewSuccess) {
         toast.error("All values must be positive integers");
-        return;
+        return false; // Indicate failure
       }
 
-      // Update local state
-      setThresholds(getThresholds());
-      setIsOpen(false);
+      setThresholds(getThresholds()); // Update local state if needed
+      toast.success("Threshold settings updated. Reloading page...");
+      logger.info("Threshold settings updated", {
+        tooOld: tooOldValue,
+        notUpdated: notUpdatedValue,
+        pendingReview: pendingReviewValue,
+      });
 
-      toast.success("Threshold settings updated");
-
-      // Reload the page to apply new thresholds
-      window.location.reload();
+      // Reload the page to apply new thresholds globally
+      // Consider alternative (e.g., refetching data) if reload is too disruptive,
+      // but reload is safer if thresholds affect backend logic.
+      setTimeout(() => window.location.reload(), 1000);
+      return true; // Indicate success
     } catch (error) {
       toast.error("Failed to update settings");
-      console.error(error);
+      logger.error("Error saving threshold settings", { error });
+      return false; // Indicate failure
     }
   };
 
@@ -86,81 +92,74 @@ export function ThresholdSettings() {
     );
 
     setThresholds(defaultThresholds);
-
     toast.success("Threshold settings reset to defaults");
+    logger.info("Threshold settings reset to defaults");
   };
 
   return (
-    <div className="relative">
-      <Button
-        variant="outline"
-        size="icon"
-        onClick={() => setIsOpen(!isOpen)}
-        className="ml-auto"
-        title="Threshold Settings"
-      >
-        <Settings className="h-4 w-4" />
-      </Button>
+    <>
+      {/* Use DialogHeader, Title, Description */}
+      <DialogHeader>
+        <DialogTitle>Threshold Settings</DialogTitle>
+        <DialogDescription>
+          Configure the thresholds (in days) for merge request filtering.
+          Changes will require a page reload.
+        </DialogDescription>
+      </DialogHeader>
+      {/* Content remains largely the same */}
+      <div className="space-y-4 py-4">
+        <div className="space-y-2">
+          <Label htmlFor="too-old">Too Old MRs (days)</Label>
+          <Input
+            id="too-old"
+            type="number"
+            min="1"
+            value={tooOldThreshold}
+            onChange={(e) => setTooOldThreshold(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            MRs created more than this many days ago
+          </p>
+        </div>
 
-      {isOpen && (
-        <Card className="absolute right-0 top-10 z-50 w-80 shadow-lg">
-          <CardHeader>
-            <CardTitle>Threshold Settings</CardTitle>
-            <CardDescription>
-              Configure the thresholds for merge request filtering
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="too-old">Too Old MRs (days)</Label>
-              <Input
-                id="too-old"
-                type="number"
-                min="1"
-                value={tooOldThreshold}
-                onChange={(e) => setTooOldThreshold(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                MRs created more than this many days ago
-              </p>
-            </div>
+        <div className="space-y-2">
+          <Label htmlFor="not-updated">Inactive MRs (days)</Label>
+          <Input
+            id="not-updated"
+            type="number"
+            min="1"
+            value={notUpdatedThreshold}
+            onChange={(e) => setNotUpdatedThreshold(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            MRs not updated in this many days
+          </p>
+        </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="not-updated">Inactive MRs (days)</Label>
-              <Input
-                id="not-updated"
-                type="number"
-                min="1"
-                value={notUpdatedThreshold}
-                onChange={(e) => setNotUpdatedThreshold(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                MRs not updated in this many days
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="pending-review">Pending Review (days)</Label>
-              <Input
-                id="pending-review"
-                type="number"
-                min="1"
-                value={pendingReviewThreshold}
-                onChange={(e) => setPendingReviewThreshold(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Team MRs waiting for review for this many days
-              </p>
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-between">
-            <Button variant="outline" onClick={handleReset}>
-              Reset
-            </Button>
-            <Button onClick={handleSave}>Save</Button>
-          </CardFooter>
-        </Card>
-      )}
-    </div>
+        <div className="space-y-2">
+          <Label htmlFor="pending-review">Pending Review (days)</Label>
+          <Input
+            id="pending-review"
+            type="number"
+            min="1"
+            value={pendingReviewThreshold}
+            onChange={(e) => setPendingReviewThreshold(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Team MRs waiting for review for this many days
+          </p>
+        </div>
+      </div>
+      {/* Use DialogFooter */}
+      <DialogFooter>
+        <Button variant="outline" onClick={handleReset}>
+          Reset to Defaults
+        </Button>
+        {/* Close dialog only on successful save */}
+        <DialogClose asChild>
+          <Button onClick={handleSave}>Save Changes</Button>
+        </DialogClose>
+      </DialogFooter>
+    </>
   );
 }
