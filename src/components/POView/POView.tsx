@@ -18,6 +18,7 @@ import {
 } from "@/types/Jira";
 import { RefreshCw, Search, Filter } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { logger } from "@/lib/logger";
 
 // This would be replaced with actual service in Phase 3
 import { JiraServiceFactory } from "@/services/JiraServiceFactory";
@@ -37,76 +38,74 @@ export function POView({ className }: POViewProps) {
     types: [],
   });
 
-  // Mock loading the tickets with MRs
+  // Load tickets
   useEffect(() => {
     const loadTickets = async () => {
       try {
         setIsLoading(true);
         setError(null);
+        logger.info("Loading PO view tickets", { filters }, "POView");
 
-        // Get the Jira service from the factory (will return mock service in dev)
+        // Get the Jira service from the factory
         const jiraService = JiraServiceFactory.getService();
 
-        // Fetch tickets with MRs
+        // Get Jira tickets with MRs
         const ticketsData = await jiraService.getTicketsWithMRs({
-          ...filters,
           search: searchTerm,
+          ...filters,
         });
 
         setTickets(ticketsData);
+        logger.info(
+          "Successfully loaded PO view tickets",
+          {
+            count: ticketsData.length,
+            filters,
+          },
+          "POView"
+        );
         setIsLoading(false);
       } catch (err) {
-        console.error("Error loading tickets:", err);
-        setError(
-          "Failed to load Jira tickets and associated MRs. Please try again."
+        const errorMessage =
+          err instanceof Error ? err.message : "Unknown error";
+        logger.error(
+          "Error loading PO view tickets",
+          {
+            error: errorMessage,
+            filters,
+          },
+          "POView"
         );
+        setError("Failed to load tickets. Please try again.");
         setIsLoading(false);
       }
     };
 
     loadTickets();
+  }, [searchTerm, filters]);
 
-    // This would be replaced with a proper cleanup in a real implementation
-    return () => {
-      // Cleanup if needed
-    };
-  }, [filters, searchTerm]);
-
-  // Handle filter change
-  const handleFilterChange = (
-    filterType: keyof JiraQueryOptions,
-    value: string | string[]
-  ) => {
-    setFilters((prev) => ({
-      ...prev,
-      [filterType]: value === "all" ? [] : value,
-    }));
-  };
-
-  // Handle refresh
   const handleRefresh = () => {
-    // Refresh data by triggering the useEffect
+    logger.info("Refreshing PO view data", {}, "POView");
     setIsLoading(true);
     setError(null);
-    // This is a bit of a hack for demo purposes - in reality we'd invalidate cache and re-fetch
-    setTimeout(() => {
-      const jiraService = JiraServiceFactory.getService();
-      jiraService
-        .getTicketsWithMRs({
-          ...filters,
-          search: searchTerm,
-          skipCache: true,
-        })
-        .then((data) => {
-          setTickets(data);
-          setIsLoading(false);
-        })
-        .catch((err) => {
-          console.error("Error refreshing:", err);
-          setError("Failed to refresh data. Please try again.");
-          setIsLoading(false);
-        });
-    }, 500);
+  };
+
+  const handleFilterChange = (
+    filterType: keyof JiraQueryOptions,
+    value: string[]
+  ) => {
+    logger.info(
+      "Updating PO view filters",
+      {
+        filterType,
+        value,
+      },
+      "POView"
+    );
+    setFilters((prev) => ({
+      ...prev,
+      [filterType]: value,
+    }));
   };
 
   // Filter and sort tickets based on current filters and search term

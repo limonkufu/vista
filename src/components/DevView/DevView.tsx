@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { RefreshCw, Search, Filter } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { logger } from "@/lib/logger";
 
 // This would be linked with actual service in Phase 3
 import { JiraServiceFactory } from "@/services/JiraServiceFactory";
@@ -74,6 +75,15 @@ export function DevView({}: DevViewProps) {
       try {
         setIsLoading(true);
         setError(null);
+        logger.info(
+          "Loading Dev view MRs",
+          {
+            searchTerm,
+            authorFilter,
+            projectFilter,
+          },
+          "DevView"
+        );
 
         // Get the Jira service from the factory, which also provides MRs
         const jiraService = JiraServiceFactory.getService();
@@ -111,24 +121,44 @@ export function DevView({}: DevViewProps) {
         const categorized = categorizeMRs(filteredMRs);
         setCategorizedMRs(categorized);
 
+        logger.info(
+          "Successfully loaded Dev view MRs",
+          {
+            total: filteredMRs.length,
+            categorized: Object.fromEntries(
+              Object.entries(categorized).map(([key, value]) => [
+                key,
+                value.length,
+              ])
+            ),
+          },
+          "DevView"
+        );
         setIsLoading(false);
       } catch (err) {
-        console.error("Error loading MRs:", err);
+        const errorMessage =
+          err instanceof Error ? err.message : "Unknown error";
+        logger.error(
+          "Error loading Dev view MRs",
+          {
+            error: errorMessage,
+            searchTerm,
+            authorFilter,
+            projectFilter,
+          },
+          "DevView"
+        );
         setError("Failed to load merge requests. Please try again.");
         setIsLoading(false);
       }
     };
 
     loadMRs();
-
-    return () => {
-      // Cleanup if needed
-    };
   }, [searchTerm, authorFilter, projectFilter]);
 
   // Handle refresh
   const handleRefresh = () => {
-    // Refresh data by triggering the useEffect
+    logger.info("Refreshing Dev view data", {}, "DevView");
     setIsLoading(true);
     setError(null);
     // This is a bit of a hack for demo purposes - in reality we'd invalidate cache and re-fetch

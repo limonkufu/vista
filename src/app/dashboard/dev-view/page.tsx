@@ -6,6 +6,7 @@ import { DevView } from "@/components/DevView/DevView";
 import { useLayout } from "@/contexts/LayoutContext";
 import { ViewType } from "@/types/ViewTypes";
 import { FeatureFlags, FeatureFlag } from "@/services/FeatureFlags";
+import { logger } from "@/lib/logger";
 
 export default function DevViewPage() {
   const router = useRouter();
@@ -14,9 +15,15 @@ export default function DevViewPage() {
   useEffect(() => {
     // Set the active view in the layout context
     setActiveView(ViewType.DEV);
+    logger.info("Initialized Dev view", {}, "DevView");
 
     // Redirect if the view is not available
     if (!isViewAvailable(ViewType.DEV)) {
+      logger.warn(
+        "Dev view not available, redirecting to dashboard",
+        {},
+        "DevView"
+      );
       router.push("/dashboard");
     }
   }, [setActiveView, isViewAvailable, router]);
@@ -29,6 +36,14 @@ export default function DevViewPage() {
 
   // If feature is not enabled, show a message (should be redirected by useEffect)
   if (!isDevViewEnabled || !areRoleBasedViewsEnabled) {
+    logger.warn(
+      "Dev view feature flags disabled",
+      {
+        isDevViewEnabled,
+        areRoleBasedViewsEnabled,
+      },
+      "DevView"
+    );
     return (
       <div className="space-y-6">This view is not currently available.</div>
     );

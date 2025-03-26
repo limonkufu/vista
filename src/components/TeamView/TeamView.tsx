@@ -1,5 +1,10 @@
 import { useState, useEffect } from "react";
-import { JiraTicketWithMRs, GitLabMRWithJira } from "@/types/Jira";
+import {
+  JiraTicketWithMRs,
+  GitLabMRWithJira,
+  JiraTicketStatus,
+  JiraQueryOptions,
+} from "@/types/Jira";
 import { MetricsDashboard } from "./MetricsDashboard";
 import { TicketSummaryTable } from "./TicketSummaryTable";
 import { Button } from "@/components/ui/button";
@@ -13,13 +18,11 @@ import {
 } from "@/components/ui/select";
 import { RefreshCw, Search, Filter } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-// This would be linked with actual service in Phase 3
+import { logger } from "@/lib/logger";
 import { JiraServiceFactory } from "@/services/JiraServiceFactory";
 
-interface TeamViewProps {
-  // Any props needed for the Team view
-}
+// Use Record<string, never> instead of empty interface
+type TeamViewProps = Record<string, never>;
 
 // Tab types for the team view
 type TeamViewTab = "overview" | "tickets";
@@ -39,42 +42,70 @@ export function TeamView({}: TeamViewProps) {
       try {
         setIsLoading(true);
         setError(null);
+        logger.info(
+          "Loading Team view data",
+          {
+            searchTerm,
+            statusFilter,
+            activeTab,
+          },
+          "TeamView"
+        );
 
         // Get the Jira service from the factory
         const jiraService = JiraServiceFactory.getService();
 
-        // Get Jira tickets with MRs
-        const ticketsData = await jiraService.getTicketsWithMRs({
+        const queryOptions: JiraQueryOptions = {
           search: searchTerm,
           statuses:
             statusFilter && statusFilter !== "all"
-              ? [statusFilter as any]
+              ? [statusFilter as JiraTicketStatus]
               : undefined,
-        });
+          skipCache: false,
+        };
+
+        // Get Jira tickets with MRs
+        const ticketsData = await jiraService.getTicketsWithMRs(queryOptions);
 
         // Get all MRs with Jira info
         const mrsData = await jiraService.getMergeRequestsWithJira();
 
         setTickets(ticketsData);
         setMergeRequests(mrsData);
+        logger.info(
+          "Successfully loaded Team view data",
+          {
+            ticketsCount: ticketsData.length,
+            mrsCount: mrsData.length,
+            statusFilter,
+          },
+          "TeamView"
+        );
         setIsLoading(false);
       } catch (err) {
-        console.error("Error loading team data:", err);
+        const errorMessage =
+          err instanceof Error ? err.message : "Unknown error";
+        logger.error(
+          "Error loading Team view data",
+          {
+            error: errorMessage,
+            searchTerm,
+            statusFilter,
+            activeTab,
+          },
+          "TeamView"
+        );
         setError("Failed to load team data. Please try again.");
         setIsLoading(false);
       }
     };
 
     loadData();
-
-    return () => {
-      // Cleanup if needed
-    };
-  }, [searchTerm, statusFilter]);
+  }, [searchTerm, statusFilter, activeTab]);
 
   // Handle refresh
   const handleRefresh = () => {
-    // Refresh data by triggering the useEffect
+    logger.info("Refreshing Team view data", {}, "TeamView");
     setIsLoading(true);
     setError(null);
     // This is a bit of a hack for demo purposes - in reality we'd invalidate cache and re-fetch
@@ -86,7 +117,7 @@ export function TeamView({}: TeamViewProps) {
           search: searchTerm,
           statuses:
             statusFilter && statusFilter !== "all"
-              ? [statusFilter as any]
+              ? [statusFilter as JiraTicketStatus]
               : undefined,
           skipCache: true,
         }),

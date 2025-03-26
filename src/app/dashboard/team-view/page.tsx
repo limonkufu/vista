@@ -6,6 +6,7 @@ import { TeamView } from "@/components/TeamView/TeamView";
 import { useLayout } from "@/contexts/LayoutContext";
 import { ViewType } from "@/types/ViewTypes";
 import { FeatureFlags, FeatureFlag } from "@/services/FeatureFlags";
+import { logger } from "@/lib/logger";
 
 export default function TeamViewPage() {
   const router = useRouter();
@@ -14,9 +15,15 @@ export default function TeamViewPage() {
   useEffect(() => {
     // Set the active view in the layout context
     setActiveView(ViewType.TEAM);
+    logger.info("Initialized Team view", {}, "TeamView");
 
     // Redirect if the view is not available
     if (!isViewAvailable(ViewType.TEAM)) {
+      logger.warn(
+        "Team view not available, redirecting to dashboard",
+        {},
+        "TeamView"
+      );
       router.push("/dashboard");
     }
   }, [setActiveView, isViewAvailable, router]);
@@ -29,6 +36,14 @@ export default function TeamViewPage() {
 
   // If feature is not enabled, show a message (should be redirected by useEffect)
   if (!isTeamViewEnabled || !areRoleBasedViewsEnabled) {
+    logger.warn(
+      "Team view feature flags disabled",
+      {
+        isTeamViewEnabled,
+        areRoleBasedViewsEnabled,
+      },
+      "TeamView"
+    );
     return (
       <div className="space-y-6">This view is not currently available.</div>
     );
