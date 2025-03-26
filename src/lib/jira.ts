@@ -1,4 +1,4 @@
-import { Version3Client } from "jira.js";
+import JiraApi from "jira-client";
 import { logger } from "./logger";
 import {
   JiraTicket,
@@ -15,7 +15,9 @@ interface JiraIssue {
   key: string;
   fields: {
     summary: string;
-    description?: string | { type: string; content: any[] };
+    description?:
+      | string
+      | { type: string; content: Array<Record<string, unknown>> };
     status: {
       name: string;
     };
@@ -45,7 +47,7 @@ interface JiraIssue {
       };
     };
     labels: string[];
-    [key: string]: any; // For custom fields
+    [key: string]: unknown; // For custom fields
   };
 }
 
@@ -64,11 +66,10 @@ interface JiraConfig {
  * Jira client for interacting with the Jira API
  */
 class JiraClient {
-  private client: Version3Client;
+  private client: JiraApi;
   private maxRetries: number;
   private rateLimitDelay: number;
 
-  
   constructor(config: JiraConfig) {
     logger.info("Jira Client initialized with configuration:", {
       host: config.host,
@@ -78,50 +79,16 @@ class JiraClient {
       rateLimitDelay: config.rateLimitDelay,
     });
 
-    this.client = new Version3Client({
+    this.client = new JiraApi({
+      protocol: "https",
       host: config.host,
-      authentication: {
-        basic: {
-          email: config.email,
-          apiToken: config.apiToken,
-        },
-      },
+      username: config.email,
+      password: config.apiToken,
+      apiVersion: "3",
+      strictSSL: true,
     });
     this.maxRetries = config.maxRetries || 3;
     this.rateLimitDelay = config.rateLimitDelay || 1000;
-  }
-
-  /**
-   * Ensure we don't exceed rate limits
-   */
-  private async ensureRateLimit(): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, this.rateLimitDelay));
-  }
-
-  /**
-   * Get a Jira ticket by its key
-   */
-  async getTicket(key: string): Promise<JiraTicket | null> {
-    let retries = 0;
-    while (retries < this.maxRetries) {
-      try {
-        await this.ensureRateLimit();
-        const issue = await this.client.issues.getIssue({
-          issueIdOrKey: key,
-        });
-        return this.mapJiraIssueToTicket(issue as unknown as JiraIssue);
-      } catch (error) {
-        retries++;
-        if (retries === this.maxRetries) {
-          logger.error(`Failed to get Jira ticket ${key}:`, error);
-          return null;
-        }
-        await new Promise((resolve) =>
-          setTimeout(resolve, Math.pow(2, retries) * 1000)
-        );
-      }
-    }
-    return null;
   }
 
   /**
@@ -174,10 +141,11 @@ class JiraClient {
           }
         : undefined,
       labels: issue.fields.labels,
-      epicKey: issue.fields[epicLinkField],
-      epicName: issue.fields[epicNameField],
-      storyPoints: issue.fields[storyPointsField],
-      sprintName: issue.fields[sprintField]?.[0]?.name,
+      epicKey: issue.fields[epicLinkField] as string | undefined,
+      epicName: issue.fields[epicNameField] as string | undefined,
+      storyPoints: issue.fields[storyPointsField] as number | undefined,
+      sprintName: (issue.fields[sprintField] as Array<{ name: string }>)?.[0]
+        ?.name,
     };
   }
 
@@ -186,8 +154,7 @@ class JiraClient {
    */
   async searchTickets(jql: string): Promise<JiraTicket[]> {
     try {
-      const response = await this.client.issueSearch.searchForIssuesUsingJql({
-        jql,
+      const response = await this.client.searchJira(jql, {
         maxResults: 100,
       });
 
@@ -195,12 +162,25 @@ class JiraClient {
         return [];
       }
 
-      return response.issues.map((issue) =>
-        this.mapJiraIssueToTicket(issue as unknown as JiraIssue)
+      return response.issues.map((issue: JiraIssue) =>
+        this.mapJiraIssueToTicket(issue)
       );
     } catch (error) {
       logger.error("Failed to search Jira tickets:", error);
       return [];
+    }
+  }
+
+  /**
+   * Get a specific Jira ticket by key
+   */
+  async getTicket(key: string): Promise<JiraTicket | null> {
+    try {
+      const issue = await this.client.findIssue(key);
+      return this.mapJiraIssueToTicket(issue as unknown as JiraIssue);
+    } catch (error) {
+      logger.error(`Failed to get Jira ticket ${key}:`, error);
+      return null;
     }
   }
 
@@ -232,7 +212,6 @@ class JiraClient {
     return this.searchTickets(`priority = "${priority}"`);
   }
 }
-
 
 // Create a singleton instance
 const jiraClient = new JiraClient({
