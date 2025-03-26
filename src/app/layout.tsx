@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProviderClient } from "@/components/ThemeProviderClient";
@@ -7,6 +7,15 @@ import { Toaster } from "sonner";
 import { LayoutProvider } from "@/contexts/LayoutContext";
 
 const inter = Inter({ subsets: ["latin"] });
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#F3F4F6" },
+    { media: "(prefers-color-scheme: dark)", color: "#181A1F" },
+  ],
+};
 
 export const metadata: Metadata = {
   title: "VISTA - Vibe Into Software Tasks & Activities",
@@ -37,11 +46,6 @@ export const metadata: Metadata = {
     ],
   },
   manifest: "/site.webmanifest",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#F3F4F6" },
-    { media: "(prefers-color-scheme: dark)", color: "#181A1F" },
-  ],
-  viewport: "width=device-width, initial-scale=1",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

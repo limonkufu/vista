@@ -1,5 +1,13 @@
 // View types for the GitLab MR Dashboard
 
+import {
+  ClipboardList,
+  UserCog,
+  GitMerge,
+  Users,
+  LucideIcon,
+} from "lucide-react";
+
 /**
  * Enum for all available view types in the dashboard
  * - HYGIENE: The original view focused on MR hygiene (Old, Inactive, Pending Review)
@@ -21,7 +29,7 @@ export interface ViewConfig {
   type: ViewType;
   label: string;
   description: string;
-  icon?: string;
+  icon: LucideIcon;
   requiresFeatureFlag?: boolean;
   featureFlag?: string;
 }
@@ -31,15 +39,10 @@ export interface ViewConfig {
  */
 export const DASHBOARD_VIEWS: ViewConfig[] = [
   {
-    type: ViewType.HYGIENE,
-    label: "Hygiene",
-    description: "Track technical debt and MR hygiene",
-    // No feature flag for original functionality
-  },
-  {
     type: ViewType.PO,
     label: "PO View",
     description: "Organize MRs by Jira tickets",
+    icon: UserCog,
     requiresFeatureFlag: true,
     featureFlag: "poView",
   },
@@ -47,6 +50,7 @@ export const DASHBOARD_VIEWS: ViewConfig[] = [
     type: ViewType.DEV,
     label: "Dev View",
     description: "MRs organized by action needed",
+    icon: GitMerge,
     requiresFeatureFlag: true,
     featureFlag: "devView",
   },
@@ -54,8 +58,15 @@ export const DASHBOARD_VIEWS: ViewConfig[] = [
     type: ViewType.TEAM,
     label: "Team View",
     description: "Team-wide metrics and insights",
+    icon: Users,
     requiresFeatureFlag: true,
     featureFlag: "teamView",
+  },
+  {
+    type: ViewType.HYGIENE,
+    label: "Hygiene",
+    description: "Track technical debt and MR hygiene",
+    icon: ClipboardList,
   },
 ];
 

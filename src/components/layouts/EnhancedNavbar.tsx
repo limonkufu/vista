@@ -14,11 +14,19 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  // DropdownMenuSeparator, // No longer needed if Overview is removed
 } from "@/components/ui/dropdown-menu";
 import { ChevronDown } from "lucide-react";
 import { getRouteForView } from "@/utils/viewNavigation";
 import { getViewTypeFromPath } from "@/utils/viewNavigation";
+import { LucideIcon } from "lucide-react";
+
+const NavIcon = ({
+  icon: Icon,
+  className,
+}: {
+  icon: LucideIcon;
+  className?: string;
+}) => <Icon className={cn("h-4 w-4", className)} />;
 
 export function EnhancedNavbar() {
   const {
@@ -54,22 +62,23 @@ export function EnhancedNavbar() {
 
   const tabButtonStyle =
     "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50";
-  const activeTabStyle = "bg-background text-foreground shadow";
-  const inactiveTabStyle = "text-muted-foreground hover:bg-muted/50";
+  const activeTabStyle = "bg-accent text-accent-foreground shadow";
+  const inactiveTabStyle =
+    "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground";
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-14 items-center">
         {/* Logo */}
-        <Logo size="lg" useImage />
         <div className="mr-4 flex">
           <Link href="/dashboard" className="flex items-center space-x-2">
+            <Logo size="sm" useImage />
             <span className="font-bold">VISTA</span>
           </Link>
         </div>
 
         {/* View Switcher using Buttons and Dropdown */}
-        <div className="flex flex-1 justify-center items-center h-9 rounded-lg bg-muted p-1">
+        <div className="flex flex-1 justify-center items-center h-9 rounded-lg bg-muted/50 p-1">
           {availableViews.map((view) =>
             view.type === ViewType.HYGIENE && areRoleBasedViewsEnabled ? (
               <DropdownMenu key={view.type}>
@@ -82,25 +91,19 @@ export function EnhancedNavbar() {
                     )}
                     title={view.description}
                   >
+                    <NavIcon icon={view.icon} className="mr-2 stroke-current" />
                     {view.label}
                     <ChevronDown className="ml-1 h-4 w-4 opacity-70" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="center">
-                  {/* REMOVED: Overview item and separator */}
-                  {/* <DropdownMenuItem
-                    onClick={() => handleHygieneNavigation("/dashboard")}
-                    className={cn(pathname === "/dashboard" && "bg-accent")}
-                  >
-                    Overview
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator /> */}
                   <DropdownMenuItem
                     onClick={() =>
                       handleHygieneNavigation("/dashboard/too-old")
                     }
                     className={cn(
-                      pathname === "/dashboard/too-old" && "bg-accent"
+                      pathname === "/dashboard/too-old" &&
+                        "bg-accent text-accent-foreground"
                     )}
                   >
                     Old MRs
@@ -110,7 +113,8 @@ export function EnhancedNavbar() {
                       handleHygieneNavigation("/dashboard/not-updated")
                     }
                     className={cn(
-                      pathname === "/dashboard/not-updated" && "bg-accent"
+                      pathname === "/dashboard/not-updated" &&
+                        "bg-accent text-accent-foreground"
                     )}
                   >
                     Inactive MRs
@@ -120,7 +124,8 @@ export function EnhancedNavbar() {
                       handleHygieneNavigation("/dashboard/pending-review")
                     }
                     className={cn(
-                      pathname === "/dashboard/pending-review" && "bg-accent"
+                      pathname === "/dashboard/pending-review" &&
+                        "bg-accent text-accent-foreground"
                     )}
                   >
                     Pending Review
@@ -139,6 +144,7 @@ export function EnhancedNavbar() {
                 disabled={!isViewAvailable(view.type)}
                 title={view.description}
               >
+                <NavIcon icon={view.icon} className="mr-2 stroke-current" />
                 {view.label}
               </Button>
             )

@@ -29,6 +29,10 @@ import {
   Server,
   Smartphone,
   Settings, // Use Settings icon
+  LayoutDashboard,
+  Users,
+  UserCog,
+  ClipboardList,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 // Removed clientCache import as it's handled by cacheManager
@@ -43,9 +47,44 @@ interface NavbarComponent extends React.FC {
   UserTools: React.FC;
 }
 
+const NavIcon = ({
+  icon: Icon,
+  className,
+}: {
+  icon: typeof Settings;
+  className?: string;
+}) => <Icon className={cn("h-4 w-4", className)} />;
+
 export const Navbar: NavbarComponent = function Navbar() {
   const pathname = usePathname();
-  const navItems = [{ name: "Dashboard", href: "/dashboard" }];
+
+  const navItems = [
+    {
+      name: "Dashboard",
+      href: "/dashboard",
+      icon: LayoutDashboard,
+    },
+    {
+      name: "Hygiene",
+      href: "/dashboard/hygiene",
+      icon: ClipboardList,
+    },
+    {
+      name: "PO View",
+      href: "/dashboard/po-view",
+      icon: UserCog,
+    },
+    {
+      name: "Dev View",
+      href: "/dashboard/dev-view",
+      icon: GitMerge,
+    },
+    {
+      name: "Team View",
+      href: "/dashboard/team-view",
+      icon: Users,
+    },
+  ];
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -57,21 +96,28 @@ export const Navbar: NavbarComponent = function Navbar() {
         </div>
         <nav className="flex-1">
           <ul className="flex gap-4">
-            {navItems.map((item) => (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  className={cn(
-                    "text-sm transition-colors hover:text-foreground/80",
-                    pathname === item.href
-                      ? "text-foreground font-medium"
-                      : "text-foreground/60"
-                  )}
-                >
-                  {item.name}
-                </Link>
-              </li>
-            ))}
+            {navItems.map((item) => {
+              const isActive = pathname === item.href;
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    className={cn(
+                      "text-sm transition-colors flex items-center gap-2 px-2 py-1 rounded-md",
+                      isActive
+                        ? "text-foreground font-medium bg-primary/10"
+                        : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                    )}
+                  >
+                    <NavIcon
+                      icon={item.icon}
+                      className="shrink-0 stroke-current"
+                    />
+                    <span>{item.name}</span>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </nav>
         <Navbar.UserTools />
@@ -84,33 +130,26 @@ export const Navbar: NavbarComponent = function Navbar() {
 Navbar.UserTools = function NavbarUserTools() {
   return (
     <div className="flex items-center gap-2">
-      {/* Keep UserSelector and ThemeSwitcher as primary actions */}
       <UserSelector />
       <ThemeSwitcher />
-
-      {/* Consolidated Settings/Cache Menu */}
       <Dialog>
-        {" "}
-        {/* Wrap DropdownMenu in Dialog for ThresholdSettings */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="icon" title="Settings & Tools">
-              <Settings className="h-4 w-4" />
+              <NavIcon icon={Settings} className="stroke-current" />
               <span className="sr-only">Settings & Tools</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            {/* Threshold Settings Trigger */}
             <DialogTrigger asChild>
               <DropdownMenuItem>
-                <Settings className="mr-2 h-4 w-4" />
+                <NavIcon icon={Settings} className="mr-2 stroke-current" />
                 <span>Threshold Settings</span>
               </DropdownMenuItem>
             </DialogTrigger>
 
             <DropdownMenuSeparator />
 
-            {/* Cache Management Group */}
             <DropdownMenuGroup>
               <DropdownMenuLabel>Cache Management</DropdownMenuLabel>
               <DropdownMenuItem
@@ -124,7 +163,7 @@ Navbar.UserTools = function NavbarUserTools() {
                   }
                 }}
               >
-                <Trash className="mr-2 h-4 w-4" />
+                <NavIcon icon={Trash} className="mr-2 stroke-current" />
                 <span>Clear All Caches</span>
               </DropdownMenuItem>
               <DropdownMenuItem
@@ -138,7 +177,7 @@ Navbar.UserTools = function NavbarUserTools() {
                   }
                 }}
               >
-                <GitMerge className="mr-2 h-4 w-4" />
+                <NavIcon icon={GitMerge} className="mr-2 stroke-current" />
                 <span>Clear GitLab Cache</span>
               </DropdownMenuItem>
               <DropdownMenuItem
@@ -152,7 +191,7 @@ Navbar.UserTools = function NavbarUserTools() {
                   }
                 }}
               >
-                <Server className="mr-2 h-4 w-4" />
+                <NavIcon icon={Server} className="mr-2 stroke-current" />
                 <span>Clear Jira Cache</span>
               </DropdownMenuItem>
               <DropdownMenuItem
@@ -166,16 +205,16 @@ Navbar.UserTools = function NavbarUserTools() {
                   }
                 }}
               >
-                <Smartphone className="mr-2 h-4 w-4" />
+                <NavIcon icon={Smartphone} className="mr-2 stroke-current" />
                 <span>Clear Client Cache</span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={async () => {
                   try {
-                    const response = await fetch("/api/cache?details=true"); // Add details flag
+                    const response = await fetch("/api/cache?details=true");
                     if (response.ok) {
                       const data = await response.json();
-                      console.log("Cache Statistics:", data); // Log full response
+                      console.log("Cache Statistics:", data);
                       toast.info(
                         "Cache statistics logged to console (see details property for keys)"
                       );
@@ -188,13 +227,12 @@ Navbar.UserTools = function NavbarUserTools() {
                   }
                 }}
               >
-                <BarChart2 className="mr-2 h-4 w-4" />
+                <NavIcon icon={BarChart2} className="mr-2 stroke-current" />
                 <span>View Cache Stats</span>
               </DropdownMenuItem>
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
-        {/* Dialog Content for Threshold Settings */}
         <DialogContent className="sm:max-w-[425px]">
           <ThresholdSettings />
         </DialogContent>
