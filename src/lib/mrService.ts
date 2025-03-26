@@ -1,16 +1,6 @@
-import {
-  GitLabMR,
-  fetchTeamMRs,
-  fetchTooOldMRs,
-  fetchNotUpdatedMRs,
-  fetchPendingReviewMRs,
-} from "./gitlab";
-import { jiraClient } from "./jira";
-import {
-  GitLabMRWithJira,
-  JiraTicketWithMRs,
-  JiraQueryOptions,
-} from "@/types/Jira";
+import { GitLabMR, fetchTeamMRs } from "./gitlab";
+import jiraClient from "./jira";
+import { GitLabMRWithJira, JiraTicketWithMRs, JiraTicket } from "@/types/Jira";
 import { logger } from "./logger";
 
 /**
@@ -54,9 +44,7 @@ export class MRService {
       // Filter out null tickets and create a map for quick lookup
       const ticketMap = new Map(
         jiraTickets
-          .filter(
-            (ticket): ticket is NonNullable<typeof ticket> => ticket !== null
-          )
+          .filter((ticket): ticket is JiraTicket => ticket !== null)
           .map((ticket) => [ticket.key, ticket])
       );
 
@@ -69,7 +57,7 @@ export class MRService {
           const mrWithJira: GitLabMRWithJira = {
             ...mr,
             jiraTicket: ticket,
-            jiraTicketKey: key || undefined,
+            jiraTicketKey: key,
           };
 
           if (!ticketGroups.has(key)) {
@@ -87,8 +75,8 @@ export class MRService {
           mrs,
           totalMRs: mrs.length,
           openMRs: mrs.filter((mr) => mr.state === "opened").length,
-          overdueMRs: mrs.filter((mr) => this.isOverdue(mr as GitLabMR)).length,
-          stalledMRs: mrs.filter((mr) => this.isStalled(mr as GitLabMR)).length,
+          overdueMRs: mrs.filter((mr) => this.isOverdue(mr)).length,
+          stalledMRs: mrs.filter((mr) => this.isStalled(mr)).length,
         };
       });
     } catch (error) {
@@ -129,9 +117,7 @@ export class MRService {
       // Create ticket map
       const ticketMap = new Map(
         jiraTickets
-          .filter(
-            (ticket): ticket is NonNullable<typeof ticket> => ticket !== null
-          )
+          .filter((ticket): ticket is JiraTicket => ticket !== null)
           .map((ticket) => [ticket.key, ticket])
       );
 
@@ -181,9 +167,7 @@ export class MRService {
       // Create ticket map
       const ticketMap = new Map(
         jiraTickets
-          .filter(
-            (ticket): ticket is NonNullable<typeof ticket> => ticket !== null
-          )
+          .filter((ticket): ticket is JiraTicket => ticket !== null)
           .map((ticket) => [ticket.key, ticket])
       );
 
@@ -196,7 +180,7 @@ export class MRService {
           const mrWithJira: GitLabMRWithJira = {
             ...mr,
             jiraTicket: ticket,
-            jiraTicketKey: key || undefined,
+            jiraTicketKey: key,
           };
 
           if (!ticketGroups.has(key)) {
@@ -214,8 +198,8 @@ export class MRService {
           mrs,
           totalMRs: mrs.length,
           openMRs: mrs.filter((mr) => mr.state === "opened").length,
-          overdueMRs: mrs.filter((mr) => this.isOverdue(mr as GitLabMR)).length,
-          stalledMRs: mrs.filter((mr) => this.isStalled(mr as GitLabMR)).length,
+          overdueMRs: mrs.filter((mr) => this.isOverdue(mr)).length,
+          stalledMRs: mrs.filter((mr) => this.isStalled(mr)).length,
         };
       });
     } catch (error) {
@@ -253,7 +237,7 @@ export class MRService {
   /**
    * Check if an MR is overdue
    */
-  private isOverdue(mr: GitLabMR): boolean {
+  private isOverdue(mr: GitLabMRWithJira | GitLabMR): boolean {
     const createdDate = new Date(mr.created_at);
     const now = new Date();
     const daysOld =
@@ -264,7 +248,7 @@ export class MRService {
   /**
    * Check if an MR is stalled
    */
-  private isStalled(mr: GitLabMR): boolean {
+  private isStalled(mr: GitLabMRWithJira | GitLabMR): boolean {
     const updatedDate = new Date(mr.updated_at);
     const now = new Date();
     const daysSinceUpdate =

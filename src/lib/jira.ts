@@ -5,111 +5,142 @@ import {
   JiraTicketStatus,
   JiraTicketPriority,
   JiraTicketType,
-} from "../types/jira";
+} from "../types/Jira";
 
 /**
- * Jira client service for interacting with Jira API
+ * Jira API response types
  */
-export class JiraClient {
+interface JiraIssue {
+  id: string;
+  key: string;
+  fields: {
+    summary: string;
+    description?: string | { type: string; content: any[] };
+    status: {
+      name: string;
+    };
+    priority: {
+      name: string;
+    };
+    issuetype: {
+      name: string;
+    };
+    created: string;
+    updated: string;
+    duedate?: string;
+    assignee?: {
+      accountId: string;
+      displayName: string;
+      emailAddress: string;
+      avatarUrls: {
+        "48x48": string;
+      };
+    };
+    reporter?: {
+      accountId: string;
+      displayName: string;
+      emailAddress: string;
+      avatarUrls: {
+        "48x48": string;
+      };
+    };
+    labels: string[];
+    [key: string]: any; // For custom fields
+  };
+}
+
+/**
+ * Jira API configuration
+ */
+interface JiraConfig {
+  host: string;
+  email: string;
+  apiToken: string;
+  maxRetries?: number;
+  rateLimitDelay?: number;
+}
+
+/**
+ * Jira client for interacting with the Jira API
+ */
+class JiraClient {
   private client: Version3Client;
+  private maxRetries: number;
+  private rateLimitDelay: number;
 
-  constructor() {
-    const host = process.env.JIRA_HOST;
-    const email = process.env.JIRA_EMAIL;
-    const apiToken = process.env.JIRA_API_TOKEN;
-
-    if (!host || !email || !apiToken) {
-      throw new Error("Jira credentials not properly configured");
-    }
-
+  constructor(config: JiraConfig) {
     this.client = new Version3Client({
-      host,
+      host: config.host,
       authentication: {
         basic: {
-          email,
-          apiToken,
+          email: config.email,
+          apiToken: config.apiToken,
         },
       },
     });
+    this.maxRetries = config.maxRetries || 3;
+    this.rateLimitDelay = config.rateLimitDelay || 1000;
   }
 
   /**
-   * Fetch a Jira ticket by its key
+   * Ensure we don't exceed rate limits
+   */
+  private async ensureRateLimit(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, this.rateLimitDelay));
+  }
+
+  /**
+   * Get a Jira ticket by its key
    */
   async getTicket(key: string): Promise<JiraTicket | null> {
-    try {
-      const issue = await this.client.issues.getIssue({
-        issueIdOrKey: key,
-      });
-
-      return this.mapJiraIssueToTicket(issue);
-    } catch (error) {
-      logger.error("Error fetching Jira ticket", { key, error }, "JiraAPI");
-      return null;
+    let retries = 0;
+    while (retries < this.maxRetries) {
+      try {
+        await this.ensureRateLimit();
+        const issue = await this.client.issues.getIssue({
+          issueIdOrKey: key,
+        });
+        return this.mapJiraIssueToTicket(issue as unknown as JiraIssue);
+      } catch (error) {
+        retries++;
+        if (retries === this.maxRetries) {
+          logger.error(`Failed to get Jira ticket ${key}:`, error);
+          return null;
+        }
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.pow(2, retries) * 1000)
+        );
+      }
     }
-  }
-
-  /**
-   * Search for Jira tickets using JQL
-   */
-  async searchTickets(jql: string): Promise<JiraTicket[]> {
-    try {
-      const response = await this.client.issueSearch.searchForIssuesUsingJql({
-        jql,
-      });
-
-      return response.issues.map((issue) => this.mapJiraIssueToTicket(issue));
-    } catch (error) {
-      logger.error("Error searching Jira tickets", { jql, error }, "JiraAPI");
-      return [];
-    }
-  }
-
-  /**
-   * Get tickets assigned to specific users
-   */
-  async getTicketsByAssignee(assigneeIds: string[]): Promise<JiraTicket[]> {
-    const jql = `assignee in (${assigneeIds.join(",")})`;
-    return this.searchTickets(jql);
-  }
-
-  /**
-   * Get tickets in specific statuses
-   */
-  async getTicketsByStatus(
-    statuses: JiraTicketStatus[]
-  ): Promise<JiraTicket[]> {
-    const jql = `status in (${statuses.map((s) => `"${s}"`).join(",")})`;
-    return this.searchTickets(jql);
-  }
-
-  /**
-   * Get tickets of specific types
-   */
-  async getTicketsByType(types: JiraTicketType[]): Promise<JiraTicket[]> {
-    const jql = `issuetype in (${types.map((t) => `"${t}"`).join(",")})`;
-    return this.searchTickets(jql);
-  }
-
-  /**
-   * Get tickets with specific priorities
-   */
-  async getTicketsByPriority(
-    priorities: JiraTicketPriority[]
-  ): Promise<JiraTicket[]> {
-    const jql = `priority in (${priorities.map((p) => `"${p}"`).join(",")})`;
-    return this.searchTickets(jql);
+    return null;
   }
 
   /**
    * Map Jira API issue to our JiraTicket type
    */
-  private mapJiraIssueToTicket(issue: any): JiraTicket {
+  private mapJiraIssueToTicket(issue: JiraIssue): JiraTicket {
+    // Get custom field IDs from environment variables or configuration
+    const epicLinkField =
+      process.env.JIRA_EPIC_LINK_FIELD || "customfield_10014";
+    const epicNameField =
+      process.env.JIRA_EPIC_NAME_FIELD || "customfield_10015";
+    const storyPointsField =
+      process.env.JIRA_STORY_POINTS_FIELD || "customfield_10016";
+    const sprintField = process.env.JIRA_SPRINT_FIELD || "customfield_10017";
+
+    // Convert description to string if it's a Document type
+    const description =
+      typeof issue.fields.description === "string"
+        ? issue.fields.description
+        : issue.fields.description
+        ? JSON.stringify(issue.fields.description)
+        : undefined;
+
     return {
       id: issue.id,
       key: issue.key,
       title: issue.fields.summary,
-      description: issue.fields.description,
+      description,
       url: `${process.env.JIRA_HOST}/browse/${issue.key}`,
       status: issue.fields.status.name as JiraTicketStatus,
       priority: issue.fields.priority.name as JiraTicketPriority,
@@ -122,7 +153,7 @@ export class JiraClient {
             id: issue.fields.assignee.accountId,
             name: issue.fields.assignee.displayName,
             email: issue.fields.assignee.emailAddress,
-            avatarUrl: issue.fields.assignee.avatarUrls?.["48x48"],
+            avatarUrl: issue.fields.assignee.avatarUrls["48x48"],
           }
         : undefined,
       reporter: issue.fields.reporter
@@ -130,17 +161,76 @@ export class JiraClient {
             id: issue.fields.reporter.accountId,
             name: issue.fields.reporter.displayName,
             email: issue.fields.reporter.emailAddress,
-            avatarUrl: issue.fields.reporter.avatarUrls?.["48x48"],
+            avatarUrl: issue.fields.reporter.avatarUrls["48x48"],
           }
         : undefined,
       labels: issue.fields.labels,
-      epicKey: issue.fields.customfield_10014, // Assuming this is the epic link field
-      epicName: issue.fields.customfield_10015, // Assuming this is the epic name field
-      storyPoints: issue.fields.customfield_10016, // Assuming this is the story points field
-      sprintName: issue.fields.customfield_10017, // Assuming this is the sprint field
+      epicKey: issue.fields[epicLinkField],
+      epicName: issue.fields[epicNameField],
+      storyPoints: issue.fields[storyPointsField],
+      sprintName: issue.fields[sprintField]?.[0]?.name,
     };
+  }
+
+  /**
+   * Search for Jira tickets using JQL
+   */
+  async searchTickets(jql: string): Promise<JiraTicket[]> {
+    try {
+      const response = await this.client.issueSearch.searchForIssuesUsingJql({
+        jql,
+        maxResults: 100,
+      });
+
+      if (!response.issues) {
+        return [];
+      }
+
+      return response.issues.map((issue) =>
+        this.mapJiraIssueToTicket(issue as unknown as JiraIssue)
+      );
+    } catch (error) {
+      logger.error("Failed to search Jira tickets:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Get tickets by assignee
+   */
+  async getTicketsByAssignee(assignee: string): Promise<JiraTicket[]> {
+    return this.searchTickets(`assignee = "${assignee}"`);
+  }
+
+  /**
+   * Get tickets by status
+   */
+  async getTicketsByStatus(status: string): Promise<JiraTicket[]> {
+    return this.searchTickets(`status = "${status}"`);
+  }
+
+  /**
+   * Get tickets by type
+   */
+  async getTicketsByType(type: string): Promise<JiraTicket[]> {
+    return this.searchTickets(`issuetype = "${type}"`);
+  }
+
+  /**
+   * Get tickets by priority
+   */
+  async getTicketsByPriority(priority: string): Promise<JiraTicket[]> {
+    return this.searchTickets(`priority = "${priority}"`);
   }
 }
 
-// Export singleton instance
-export const jiraClient = new JiraClient();
+// Create a singleton instance
+const jiraClient = new JiraClient({
+  host: process.env.JIRA_HOST || "",
+  email: process.env.JIRA_EMAIL || "",
+  apiToken: process.env.JIRA_API_TOKEN || "",
+  maxRetries: 3,
+  rateLimitDelay: 1000,
+});
+
+export default jiraClient;
