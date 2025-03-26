@@ -52,7 +52,7 @@ export function TicketGroup({
   isExpanded = false,
 }: TicketGroupProps) {
   const [isOpen, setIsOpen] = useState(isExpanded);
-  const { ticket, mergeRequests, openMRs, stalledMRs } = ticketWithMRs;
+  const { ticket, mrs, openMRs, stalledMRs } = ticketWithMRs;
 
   // Mark as reviewed (would be connected to real functionality in Phase 3)
   const handleMarkReviewed = (e: React.MouseEvent) => {
@@ -136,9 +136,9 @@ export function TicketGroup({
 
         <CollapsibleContent>
           <CardContent>
-            {mergeRequests.length > 0 ? (
+            {mrs && mrs.length > 0 ? (
               <div className="space-y-3">
-                {mergeRequests.map((mr) => (
+                {mrs.map((mr) => (
                   <MRRow key={mr.id} mr={mr} />
                 ))}
               </div>
@@ -151,8 +151,8 @@ export function TicketGroup({
 
           <CardFooter className="flex justify-between">
             <div className="text-sm text-muted-foreground">
-              {mergeRequests.length} Merge Request
-              {mergeRequests.length !== 1 ? "s" : ""}
+              {mrs ? mrs.length : 0} Merge Request
+              {mrs && mrs.length !== 1 ? "s" : ""}
             </div>
             {ticket.description && (
               <Button variant="ghost" size="sm" className="flex gap-1">

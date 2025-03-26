@@ -26,6 +26,18 @@ const DEV_MODE_DEFAULTS = {
 };
 
 const STORAGE_KEY = "gitlab-mrs-dashboard-feature-flags";
+const COOKIE_KEY = "gitlab-mrs-dashboard-feature-flags";
+
+// Helper function to set a cookie for server-side feature flags
+const setCookie = (value: string) => {
+  if (typeof document === "undefined") return;
+
+  // Set cookie to expire in 30 days
+  const expireDate = new Date();
+  expireDate.setDate(expireDate.getDate() + 30);
+
+  document.cookie = `${COOKIE_KEY}=${value}; expires=${expireDate.toUTCString()}; path=/; SameSite=Lax`;
+};
 
 // Feature flags service
 export const FeatureFlags = {
@@ -82,7 +94,13 @@ export const FeatureFlags = {
     try {
       const flags = this.getAllFlags();
       flags[flag] = value;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(flags));
+
+      // Save to localStorage
+      const flagsJson = JSON.stringify(flags);
+      localStorage.setItem(STORAGE_KEY, flagsJson);
+
+      // Also set cookie for server-side (middleware) access
+      setCookie(flagsJson);
 
       // Dispatch an event to notify subscribers
       window.dispatchEvent(
@@ -100,12 +118,19 @@ export const FeatureFlags = {
     if (typeof window === "undefined") return;
 
     try {
+      // Clear localStorage
       localStorage.removeItem(STORAGE_KEY);
+
+      // Get default flags
+      const defaultFlags = this.getAllFlags();
+
+      // Update cookie with default values
+      setCookie(JSON.stringify(defaultFlags));
 
       // Dispatch an event to notify subscribers
       window.dispatchEvent(
         new CustomEvent("feature-flag-change", {
-          detail: { reset: true, flags: this.getAllFlags() },
+          detail: { reset: true, flags: defaultFlags },
         })
       );
     } catch (error) {

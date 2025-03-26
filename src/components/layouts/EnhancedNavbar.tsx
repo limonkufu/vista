@@ -128,15 +128,3 @@ export function EnhancedNavbar() {
     </header>
   );
 }
-
-// Create a subcomponent to render just the user tools portion of the navbar
-// This allows the EnhancedNavbar to reuse this part from the original
-Navbar.UserTools = function NavbarUserTools() {
-  return (
-    <div className="flex items-center gap-2">
-      {/* We'll extract these from the original Navbar */}
-      {/* This approach allows us to inherit all the original functionality */}
-      <></>
-    </div>
-  );
-};

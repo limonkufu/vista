@@ -12,6 +12,7 @@ import {
   JiraTicketWithMRs,
   JiraQueryOptions,
   JiraUser,
+  GitLabMRWithJira,
 } from "@/types/Jira";
 
 /**
@@ -20,9 +21,15 @@ import {
 export interface JiraService {
   getTickets(options?: JiraQueryOptions): Promise<JiraTicket[]>;
   getTicket(key: string): Promise<JiraTicket | null>;
-  mapMRsToTickets(mrs: any[]): Promise<any[]>;
-  getMRsGroupedByTicket(mrs: any[]): Promise<JiraTicketWithMRs[]>;
+  mapMRsToTickets(mrs: unknown[]): Promise<unknown[]>;
+  getMRsGroupedByTicket(mrs: unknown[]): Promise<JiraTicketWithMRs[]>;
   getUsers(): Promise<JiraUser[]>;
+  getTicketsWithMRs(options?: JiraQueryOptions): Promise<JiraTicketWithMRs[]>;
+  getMergeRequestsWithJira(options?: {
+    skipCache?: boolean;
+    projectId?: number;
+    authorId?: number;
+  }): Promise<GitLabMRWithJira[]>;
 }
 
 /**
@@ -79,3 +86,19 @@ export function getJiraService(
  * Get a shared instance of the Jira service
  */
 export const jiraService = getJiraService();
+
+/**
+ * Factory class to provide consistent access to the Jira service
+ * (for backward compatibility with import patterns in the codebase)
+ */
+export class JiraServiceFactory {
+  /**
+   * Get the Jira service instance
+   */
+  static getService(config?: Partial<JiraServiceConfig>): JiraService {
+    if (config) {
+      return getJiraService(config);
+    }
+    return jiraService;
+  }
+}

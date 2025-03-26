@@ -83,7 +83,22 @@ export interface JiraTicket {
  * This extends the existing GitLabMR type from the current application
  */
 export interface GitLabMRWithJira {
-  // We'll inherit the existing GitLab MR fields, plus add:
+  // Basic GitLab MR fields
+  id: number;
+  iid: number;
+  project_id: number;
+  title: string;
+  description?: string;
+  state: string;
+  created_at: string;
+  updated_at: string;
+  web_url: string;
+  author: {
+    id: number;
+    name: string;
+  };
+  
+  // Jira-specific fields
   jiraTicket?: JiraTicket;
   jiraTicketKey?: string; // If we have the key but not full ticket data
 }
@@ -93,13 +108,13 @@ export interface GitLabMRWithJira {
  */
 export interface JiraTicketWithMRs {
   ticket: JiraTicket;
-  mergeRequests: GitLabMRWithJira[];
+  mrs: GitLabMRWithJira[];
   
-  // Metrics for the Team View
-  totalMRs: number;
-  openMRs: number;
-  overdueMRs: number;
-  stalledMRs: number;
+  // Optional metrics for the Team View (making these optional)
+  totalMRs?: number;
+  openMRs?: number;
+  overdueMRs?: number;
+  stalledMRs?: number;
 }
 
 /**
@@ -114,6 +129,7 @@ export interface JiraQueryOptions {
   epicKey?: string;
   search?: string;
   labels?: string[];
+  skipCache?: boolean;
 }
 
 /**

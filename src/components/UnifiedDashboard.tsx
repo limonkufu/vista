@@ -6,7 +6,6 @@ import { ViewType } from "@/types/ViewTypes";
 import { useLayout } from "@/contexts/LayoutContext";
 import { getViewTypeFromPath } from "@/utils/viewNavigation";
 import { NewFeatureBanner } from "@/components/TransitionElements";
-import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 
 interface UnifiedDashboardProps {
   children: React.ReactNode;
@@ -43,11 +42,12 @@ export function UnifiedDashboard({ children }: UnifiedDashboardProps) {
     setShowBanner(isMainDashboard && areRoleBasedViewsEnabled);
   }, [pathname, areRoleBasedViewsEnabled]);
 
+  // Return just the fragments with banner and children, not wrapped in DashboardLayout
   return (
-    <DashboardLayout>
+    <>
       {showBanner && <NewFeatureBanner />}
       {children}
-    </DashboardLayout>
+    </>
   );
 }
 

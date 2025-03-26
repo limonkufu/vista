@@ -13,7 +13,7 @@ const RATE_LIMIT = {
 };
 
 // Feature flag check for server components
-const isFeatureEnabled = (flagName: string): boolean => {
+const isFeatureEnabled = async (flagName: string): Promise<boolean> => {
   try {
     if (typeof window !== "undefined") {
       // Client-side not handled here - use FeatureFlags service instead
@@ -21,7 +21,7 @@ const isFeatureEnabled = (flagName: string): boolean => {
     }
 
     // Get feature flags from cookies
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const featureFlagsCookie = cookieStore.get(
       "gitlab-mrs-dashboard-feature-flags"
     );
@@ -46,19 +46,30 @@ export async function middleware(request: NextRequest) {
     }
 
     // Check feature flags for role-based view pages
-    const isRoleBasedEnabled = isFeatureEnabled(FeatureFlag.ROLE_BASED_VIEWS);
+    const isRoleBasedEnabled = await isFeatureEnabled(
+      FeatureFlag.ROLE_BASED_VIEWS
+    );
 
     // Handle view-specific routes
     if (request.nextUrl.pathname.startsWith("/dashboard/po-view")) {
-      if (!isRoleBasedEnabled || !isFeatureEnabled(FeatureFlag.PO_VIEW)) {
+      if (
+        !isRoleBasedEnabled ||
+        !(await isFeatureEnabled(FeatureFlag.PO_VIEW))
+      ) {
         return NextResponse.redirect(new URL("/dashboard", request.url));
       }
     } else if (request.nextUrl.pathname.startsWith("/dashboard/dev-view")) {
-      if (!isRoleBasedEnabled || !isFeatureEnabled(FeatureFlag.DEV_VIEW)) {
+      if (
+        !isRoleBasedEnabled ||
+        !(await isFeatureEnabled(FeatureFlag.DEV_VIEW))
+      ) {
         return NextResponse.redirect(new URL("/dashboard", request.url));
       }
     } else if (request.nextUrl.pathname.startsWith("/dashboard/team-view")) {
-      if (!isRoleBasedEnabled || !isFeatureEnabled(FeatureFlag.TEAM_VIEW)) {
+      if (
+        !isRoleBasedEnabled ||
+        !(await isFeatureEnabled(FeatureFlag.TEAM_VIEW))
+      ) {
         return NextResponse.redirect(new URL("/dashboard", request.url));
       }
     }
@@ -90,7 +101,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Rate limiting
-  const clientIp = request.ip || "unknown";
+  const clientIp = request.headers.get("x-forwarded-for") || "unknown";
   let limiter = limiters.get(clientIp);
 
   if (!limiter) {

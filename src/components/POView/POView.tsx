@@ -23,10 +23,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { JiraServiceFactory } from "@/services/JiraServiceFactory";
 
 interface POViewProps {
-  // Any props needed for the PO view
+  className?: string;
 }
 
-export function POView({}: POViewProps) {
+export function POView({ className }: POViewProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [tickets, setTickets] = useState<JiraTicketWithMRs[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -75,9 +75,12 @@ export function POView({}: POViewProps) {
   // Handle filter change
   const handleFilterChange = (
     filterType: keyof JiraQueryOptions,
-    value: any
+    value: string | string[]
   ) => {
-    setFilters((prev) => ({ ...prev, [filterType]: value }));
+    setFilters((prev) => ({
+      ...prev,
+      [filterType]: value === "all" ? [] : value,
+    }));
   };
 
   // Handle refresh
@@ -110,7 +113,7 @@ export function POView({}: POViewProps) {
   const filteredTickets = tickets;
 
   return (
-    <div className="space-y-6">
+    <div className={`space-y-6 ${className || ""}`}>
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Product Owner View</h1>
         <Button onClick={handleRefresh} variant="outline" disabled={isLoading}>
@@ -138,7 +141,7 @@ export function POView({}: POViewProps) {
             onValueChange={(value) =>
               handleFilterChange(
                 "statuses",
-                value ? [value as JiraTicketStatus] : []
+                value === "all" ? [] : [value as JiraTicketStatus]
               )
             }
           >
@@ -146,7 +149,7 @@ export function POView({}: POViewProps) {
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Statuses</SelectItem>
+              <SelectItem value="all">All Statuses</SelectItem>
               {Object.values(JiraTicketStatus).map((status) => (
                 <SelectItem key={status} value={status}>
                   {status}
@@ -159,7 +162,7 @@ export function POView({}: POViewProps) {
             onValueChange={(value) =>
               handleFilterChange(
                 "priorities",
-                value ? [value as JiraTicketPriority] : []
+                value === "all" ? [] : [value as JiraTicketPriority]
               )
             }
           >
@@ -167,7 +170,7 @@ export function POView({}: POViewProps) {
               <SelectValue placeholder="Priority" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Priorities</SelectItem>
+              <SelectItem value="all">All Priorities</SelectItem>
               {Object.values(JiraTicketPriority).map((priority) => (
                 <SelectItem key={priority} value={priority}>
                   {priority}
@@ -180,7 +183,7 @@ export function POView({}: POViewProps) {
             onValueChange={(value) =>
               handleFilterChange(
                 "types",
-                value ? [value as JiraTicketType] : []
+                value === "all" ? [] : [value as JiraTicketType]
               )
             }
           >
@@ -188,7 +191,7 @@ export function POView({}: POViewProps) {
               <SelectValue placeholder="Type" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Types</SelectItem>
+              <SelectItem value="all">All Types</SelectItem>
               {Object.values(JiraTicketType).map((type) => (
                 <SelectItem key={type} value={type}>
                   {type}

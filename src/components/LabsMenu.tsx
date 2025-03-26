@@ -27,7 +27,18 @@ export function LabsMenu() {
       new URLSearchParams(window.location.search).has("labs");
 
     setShow(isDev || hasLabsParam);
-    setFlags(FeatureFlags.getAllFlags());
+
+    // Get current flags and update state
+    const currentFlags = FeatureFlags.getAllFlags();
+    setFlags(currentFlags);
+
+    // Sync flags to cookies on initialization
+    if (typeof document !== "undefined") {
+      const flagsJson = JSON.stringify(currentFlags);
+      const expireDate = new Date();
+      expireDate.setDate(expireDate.getDate() + 30);
+      document.cookie = `gitlab-mrs-dashboard-feature-flags=${flagsJson}; expires=${expireDate.toUTCString()}; path=/; SameSite=Lax`;
+    }
 
     // Listen for flag changes
     const handleFlagChange = () => {

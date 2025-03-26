@@ -14,6 +14,7 @@ import {
   JiraUser,
   JiraTicketWithMRs,
   JiraQueryOptions,
+  GitLabMRWithJira,
   extractJiraKeyFromText,
 } from "@/types/Jira";
 
@@ -320,10 +321,10 @@ function mapMRsToTickets(mrs: any[], tickets: JiraTicket[]): any[] {
  * Group MRs by Jira ticket
  */
 function groupMRsByTicket(
-  mrs: any[],
+  mrs: unknown[],
   tickets: JiraTicket[]
 ): JiraTicketWithMRs[] {
-  const ticketMap = new Map<string, any[]>();
+  const ticketMap = new Map<string, unknown[]>();
 
   // Initialize the map with empty arrays for all tickets
   tickets.forEach((ticket) => {
@@ -331,7 +332,7 @@ function groupMRsByTicket(
   });
 
   // Group MRs by ticket key
-  mrs.forEach((mr) => {
+  mrs.forEach((mr: any) => {
     if (mr.jiraTicketKey && ticketMap.has(mr.jiraTicketKey)) {
       ticketMap.get(mr.jiraTicketKey)?.push(mr);
     }
@@ -339,15 +340,16 @@ function groupMRsByTicket(
 
   // Create JiraTicketWithMRs objects
   return tickets.map((ticket) => {
-    const mergeRequests = ticketMap.get(ticket.key) || [];
+    const ticketMrs = ticketMap.get(ticket.key) || [];
 
     return {
       ticket,
-      mergeRequests,
-      totalMRs: mergeRequests.length,
-      openMRs: mergeRequests.filter((mr) => mr.state === "opened").length,
-      overdueMRs: Math.floor(Math.random() * mergeRequests.length),
-      stalledMRs: Math.floor(Math.random() * mergeRequests.length),
+      mrs: ticketMrs as GitLabMRWithJira[],
+      totalMRs: ticketMrs.length,
+      openMRs: (ticketMrs as any[]).filter((mr) => mr.state === "opened")
+        .length,
+      overdueMRs: Math.floor(Math.random() * ticketMrs.length),
+      stalledMRs: Math.floor(Math.random() * ticketMrs.length),
     };
   });
 }
@@ -436,5 +438,155 @@ export const MockJiraService = {
     );
 
     return [...SAMPLE_USERS];
+  },
+
+  /**
+   * Get Jira tickets with MRs directly
+   * This is used by role-based views to get tickets with their associated MRs
+   */
+  async getTicketsWithMRs(
+    options?: JiraQueryOptions
+  ): Promise<JiraTicketWithMRs[]> {
+    // Simulate network delay
+    await new Promise((resolve) =>
+      setTimeout(resolve, 800 + Math.random() * 1000)
+    );
+
+    // Generate mock tickets
+    const tickets = generateMockTickets(50);
+
+    // Filter tickets based on options
+    const filteredTickets = filterTickets(tickets, options);
+
+    // Generate some mock MRs for each ticket
+    const ticketsWithMRs: JiraTicketWithMRs[] = filteredTickets.map(
+      (ticket) => {
+        // Generate 0-4 mock MRs per ticket
+        const mrCount = Math.floor(Math.random() * 5);
+        const mrs = Array.from({ length: mrCount }, (_, i) => ({
+          id: Math.floor(Math.random() * 10000),
+          iid: Math.floor(Math.random() * 10000),
+          project_id: Math.floor(Math.random() * 100),
+          title: `Fix for ${ticket.key}: ${ticket.title.substring(0, 30)}...`,
+          description: `This MR addresses the issue described in ${ticket.key}`,
+          state: ["opened", "merged", "closed"][Math.floor(Math.random() * 3)],
+          created_at: new Date(
+            Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000
+          ).toISOString(),
+          updated_at: new Date(
+            Date.now() - Math.random() * 15 * 24 * 60 * 60 * 1000
+          ).toISOString(),
+          web_url: `https://gitlab.example.com/project/merge_requests/${Math.floor(
+            Math.random() * 1000
+          )}`,
+          author: {
+            id: Math.floor(Math.random() * 100),
+            name: SAMPLE_USERS[Math.floor(Math.random() * SAMPLE_USERS.length)]
+              .name,
+          },
+          jiraKey: ticket.key,
+          jiraTicket: ticket,
+        }));
+
+        return {
+          ticket,
+          mrs,
+        };
+      }
+    );
+
+    return ticketsWithMRs;
+  },
+
+  /**
+   * Get merge requests with Jira information
+   * This is used by the Dev View to show MRs with their Jira context
+   */
+  async getMergeRequestsWithJira(options?: {
+    skipCache?: boolean;
+    projectId?: number;
+    authorId?: number;
+  }): Promise<GitLabMRWithJira[]> {
+    // Simulate network delay
+    await new Promise((resolve) =>
+      setTimeout(resolve, 600 + Math.random() * 800)
+    );
+
+    // Generate mock tickets
+    const tickets = generateMockTickets(50);
+
+    // Generate mock MRs with Jira info
+    const totalMRs = 25;
+    const mrs: GitLabMRWithJira[] = Array.from(
+      { length: totalMRs },
+      (_, index) => {
+        // Random ticket for each MR
+        const randomTicketIndex = Math.floor(Math.random() * tickets.length);
+        const ticket = tickets[randomTicketIndex];
+
+        // 75% chance of having a Jira ticket
+        const hasJiraTicket = Math.random() > 0.25;
+
+        // If options include project filtering, apply it
+        const projectId =
+          options?.projectId || Math.floor(Math.random() * 5) + 1;
+
+        const mrId = 1000 + index;
+
+        return {
+          id: mrId,
+          iid: 100 + index,
+          project_id: projectId,
+          title: hasJiraTicket
+            ? `[${ticket.key}] Fix for ${ticket.title.substring(0, 30)}...`
+            : `Generic MR without Jira reference ${index}`,
+          description: hasJiraTicket
+            ? `This MR addresses the issue described in ${ticket.key}`
+            : `Description for MR ${index}`,
+          state: ["opened", "merged", "closed"][Math.floor(Math.random() * 3)],
+          created_at: new Date(
+            Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000
+          ).toISOString(),
+          updated_at: new Date(
+            Date.now() - Math.random() * 15 * 24 * 60 * 60 * 1000
+          ).toISOString(),
+          web_url: `https://gitlab.example.com/project/merge_requests/${
+            100 + index
+          }`,
+          author: {
+            id: options?.authorId || Math.floor(Math.random() * 5) + 1,
+            name: SAMPLE_USERS[Math.floor(Math.random() * SAMPLE_USERS.length)]
+              .name,
+          },
+          jiraTicketKey: hasJiraTicket ? ticket.key : undefined,
+          jiraTicket: hasJiraTicket ? ticket : undefined,
+        };
+      }
+    );
+
+    // Apply filtering if options are provided
+    if (options) {
+      return mrs.filter((mr) => {
+        // Filter by project
+        if (
+          options.projectId !== undefined &&
+          mr.project_id !== options.projectId
+        ) {
+          return false;
+        }
+
+        // Filter by author
+        if (
+          options.authorId !== undefined &&
+          mr.author.id !== options.authorId
+        ) {
+          return false;
+        }
+
+        return true;
+      });
+    }
+
+    return mrs;
   },
 };
