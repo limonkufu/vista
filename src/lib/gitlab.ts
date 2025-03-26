@@ -8,18 +8,18 @@ const GITLAB_API_BASE_URL = "https://gitlab.com/api/v4";
 const DEFAULT_PARENT_GROUP_PATH = "ska-telescope/ska-dev";
 const DEFAULT_SEARCH_GROUP_ID = "3180705"; // Group ID for user search
 
-// --- Interfaces ---
+// --- Interfaces (Keep existing interfaces: GitLabUser, GitLabMR, etc.) ---
 export interface GitLabUser {
   id: number;
   name: string;
   username: string;
   avatar_url?: string;
   web_url?: string;
-  state?: string; // Added state for filtering active users if needed
+  state?: string;
 }
 
-// ... (Keep existing GitLabMR, FetchAllTeamMRsOptions, GitLabMRsResponse interfaces) ...
 export interface GitLabMR {
+  // Keep full interface definition
   id: number;
   iid: number;
   project_id: number;
@@ -132,11 +132,7 @@ interface GitLabMember {
   expires_at: string | null;
 }
 
-// --- Helper Functions ---
-
-/**
- * Makes an authenticated request to the GitLab API.
- */
+// --- Helper Functions (Keep gitlabRequest, mapMemberToUser) ---
 async function gitlabRequest<T>(
   url: string,
   params: Record<string, any> = {}
@@ -147,28 +143,30 @@ async function gitlabRequest<T>(
     throw new Error("GITLAB_API_TOKEN environment variable is not set");
   }
   try {
+    logger.debug(
+      "Making GitLab API request",
+      { url, params },
+      "GitLabAPI:Request"
+    );
     const response = await axios.get<T>(url, {
       headers: { "PRIVATE-TOKEN": apiToken },
-      params: { per_page: 100, ...params }, // Default to max per_page
+      params: { per_page: 100, ...params },
     });
     return response.data;
   } catch (error) {
     const axiosError = error as AxiosError;
     const status = axiosError.response?.status;
-    const message =
-      (axiosError.response?.data as any)?.message || axiosError.message;
+    const responseData = axiosError.response?.data;
+    const message = (responseData as any)?.message || axiosError.message;
     logger.error(
       "GitLab API request failed",
-      { url, status, message },
-      "GitLabAPI"
+      { url, params, status, message, responseData },
+      "GitLabAPI:Request"
     );
     throw new Error(`GitLab API request failed (${status}): ${message}`);
   }
 }
 
-/**
- * Maps GitLab member data to GitLabUser.
- */
 function mapMemberToUser(member: GitLabMember): GitLabUser {
   return {
     id: member.id,
@@ -184,7 +182,7 @@ function mapMemberToUser(member: GitLabMember): GitLabUser {
 
 /**
  * Fetch GitLab users by group name under a specific parent group.
- * Searches for subgroups case-insensitively.
+ * Uses the first result from GitLab's subgroup search.
  * @param groupName Name of the subgroup to search for.
  * @param parentGroupPath Path of the parent group (default: 'ska-telescope/ska-dev').
  * @param skipCache Skip cache and fetch fresh data.
@@ -199,84 +197,133 @@ export async function fetchUsersByGroupName(
   const cacheKeyParams = { groupName, parentGroupPath };
   const cacheKey = gitlabApiCache.generateKey(operation, cacheKeyParams);
 
+  // --- Cache Check ---
   if (!skipCache) {
     const cachedData = gitlabApiCache.get(cacheKey);
     if (cachedData) {
       logger.info(
-        "Using cached users for group",
+        "[Cache] Using cached users for group",
         { groupName, cacheKey },
-        "GitLabAPI"
+        "GitLabAPI:fetchUsersByGroupName"
       );
-      return cachedData.data as GitLabUser[]; // Assume data is GitLabUser[]
+      return cachedData.data as GitLabUser[];
     }
+    logger.info(
+      "[Cache] Cache miss for group users",
+      { groupName, cacheKey },
+      "GitLabAPI:fetchUsersByGroupName"
+    );
+  } else {
+    logger.info(
+      "[Cache] Skipping cache for group users",
+      { groupName },
+      "GitLabAPI:fetchUsersByGroupName"
+    );
   }
 
   logger.info(
     "Fetching users by group name",
     { groupName, parentGroupPath },
-    "GitLabAPI"
+    "GitLabAPI:fetchUsersByGroupName"
   );
 
-  // 1. Find the parent group ID (optional, could hardcode if stable)
-  // For simplicity, we'll use the encoded path directly in the subgroup search URL
+  try {
+    // 1. Search for the subgroup within the parent group
+    const encodedParentPath = encodeURIComponent(parentGroupPath);
+    // No need to encode groupName here, axios handles query param encoding
+    const groupSearchUrl = `${GITLAB_API_BASE_URL}/groups/${encodedParentPath}/subgroups`;
+    const searchParams = { search: groupName };
 
-  // 2. Search for the subgroup within the parent group
-  const encodedParentPath = encodeURIComponent(parentGroupPath);
-  const encodedGroupName = encodeURIComponent(groupName);
-  const groupSearchUrl = `${GITLAB_API_BASE_URL}/groups/${encodedParentPath}/subgroups`;
-
-  const subgroups = await gitlabRequest<GitLabGroup[]>(groupSearchUrl, {
-    search: encodedGroupName,
-  });
-
-  if (!subgroups || subgroups.length === 0) {
-    logger.warn(
-      "No subgroups found matching search",
-      { groupName, parentGroupPath },
-      "GitLabAPI"
+    logger.debug(
+      "Searching for subgroup",
+      { url: groupSearchUrl, params: searchParams },
+      "GitLabAPI:fetchUsersByGroupName"
     );
-    return [];
-  }
-
-  // 3. Find the first case-insensitive match
-  const targetGroup = subgroups.find(
-    (group) => group.name.toLowerCase() === groupName.toLowerCase()
-  );
-
-  if (!targetGroup) {
-    logger.warn(
-      "No exact case-insensitive subgroup match found",
-      { groupName, parentGroupPath },
-      "GitLabAPI"
+    const subgroups = await gitlabRequest<GitLabGroup[]>(
+      groupSearchUrl,
+      searchParams
     );
-    return [];
+    logger.debug(
+      "Subgroup search result",
+      {
+        count: subgroups?.length,
+        subgroups: subgroups?.map((g) => ({
+          id: g.id,
+          name: g.name,
+          path: g.path,
+        })),
+      },
+      "GitLabAPI:fetchUsersByGroupName"
+    );
+
+    if (!subgroups || subgroups.length === 0) {
+      logger.warn(
+        "No subgroups found matching search term", // Changed log message
+        { groupName, parentGroupPath },
+        "GitLabAPI:fetchUsersByGroupName"
+      );
+      return [];
+    }
+
+    // 2. Use the FIRST result returned by the search
+    const targetGroup = subgroups[0];
+    // Log which group was selected, especially if multiple were returned
+    if (subgroups.length > 1) {
+      logger.info(
+        `Multiple subgroups found for search term "${groupName}". Using the first result: "${targetGroup.name}" (ID: ${targetGroup.id})`,
+        { allFound: subgroups.map((g) => g.name) },
+        "GitLabAPI:fetchUsersByGroupName"
+      );
+    } else {
+      logger.info(
+        `Found target subgroup: "${targetGroup.name}" (ID: ${targetGroup.id})`,
+        {},
+        "GitLabAPI:fetchUsersByGroupName"
+      );
+    }
+
+    // 3. Fetch members of the found subgroup
+    const membersUrl = `${GITLAB_API_BASE_URL}/groups/${targetGroup.id}/members`; // REMOVED /all to get only DIRECT members
+    logger.debug(
+      "Fetching group members",
+      { url: membersUrl },
+      "GitLabAPI:fetchUsersByGroupName"
+    );
+    const members = await gitlabRequest<GitLabMember[]>(membersUrl);
+    logger.debug(
+      "Group members fetch result",
+      { count: members?.length },
+      "GitLabAPI:fetchUsersByGroupName"
+    );
+
+    const users = members.map(mapMemberToUser);
+    const activeUsers = users.filter((u) => u.state === "active"); // Filter for active users
+
+    // Cache the result (only active users)
+    gitlabApiCache.set(cacheKey, activeUsers, {}); // Use default TTL
+
+    logger.info(
+      "Successfully fetched and filtered users by group name",
+      {
+        groupName: targetGroup.name,
+        totalMembers: users.length,
+        activeMembers: activeUsers.length,
+      },
+      "GitLabAPI:fetchUsersByGroupName"
+    );
+
+    return activeUsers;
+  } catch (error) {
+    logger.error(
+      "Error occurred during fetchUsersByGroupName",
+      { groupName, error: error instanceof Error ? error.message : error },
+      "GitLabAPI:fetchUsersByGroupName"
+    );
+    return []; // Return empty on error
   }
-
-  // 4. Fetch members of the found subgroup
-  const membersUrl = `${GITLAB_API_BASE_URL}/groups/${targetGroup.id}/members/all`; // Use /all to include inherited members
-  const members = await gitlabRequest<GitLabMember[]>(membersUrl);
-
-  const users = members.map(mapMemberToUser);
-
-  // Cache the result
-  gitlabApiCache.set(cacheKey, users, {}); // Use default TTL
-
-  logger.info(
-    "Successfully fetched users by group name",
-    { groupName, userCount: users.length },
-    "GitLabAPI"
-  );
-
-  return users;
 }
 
-/**
- * Search for users within a specific group by name or username (case-insensitive).
- * @param searchTerm The name or username to search for.
- * @param groupId The ID of the group to search within (default: DEFAULT_SEARCH_GROUP_ID).
- * @param skipCache Skip cache and fetch fresh data.
- * @returns Array of matching user objects.
- */
+// --- Keep other functions (searchUsersByNameOrUsername, fetchUsersByIds, getTeamUserIds, getDefaultTeamUsers, isTeamMember, isTeamRelevantMR, fetchAllTeamMRs, deprecated functions) ---
 export async function searchUsersByNameOrUsername(
   searchTerm: string,
   groupId: string = DEFAULT_SEARCH_GROUP_ID,
@@ -304,25 +351,14 @@ export async function searchUsersByNameOrUsername(
     "GitLabAPI"
   );
 
-  // GitLab's user search within a group seems less direct via documented API.
-  // The Makefile uses /groups/:id/search?scope=users&search=term, which isn't standard.
-  // A more reliable way is to fetch all members and filter, or use the global /users endpoint.
-  // Let's use the global /users endpoint for broader search, then filter if needed.
-  // Note: This might return users outside the specific group if not filtered further.
-  // If strict group membership is required, fetching all group members and filtering is safer.
-
-  // Using global search:
   const searchUrl = `${GITLAB_API_BASE_URL}/users`;
   const results = await gitlabRequest<GitLabUser[]>(searchUrl, {
     search: searchTerm,
   });
 
-  // No need for case-insensitive check here as GitLab search handles it.
-  // Filter for active users if necessary
   const activeUsers = results.filter((user) => user.state === "active");
 
-  // Cache the result
-  gitlabApiCache.set(cacheKey, activeUsers, {}); // Use default TTL
+  gitlabApiCache.set(cacheKey, activeUsers, {});
 
   logger.info(
     "Successfully searched users",
@@ -333,12 +369,6 @@ export async function searchUsersByNameOrUsername(
   return activeUsers;
 }
 
-/**
- * Fetch user details for a list of user IDs.
- * @param userIds Array of user IDs.
- * @param skipCache Skip cache and fetch fresh data.
- * @returns Array of user objects.
- */
 export async function fetchUsersByIds(
   userIds: number[],
   skipCache: boolean = false
@@ -348,7 +378,6 @@ export async function fetchUsersByIds(
   }
 
   const operation = "fetchUsersByIds";
-  // Sort IDs for consistent cache key
   const sortedIds = [...userIds].sort((a, b) => a - b);
   const cacheKeyParams = { ids: sortedIds.join(",") };
   const cacheKey = gitlabApiCache.generateKey(operation, cacheKeyParams);
@@ -371,12 +400,9 @@ export async function fetchUsersByIds(
     "GitLabAPI"
   );
 
-  // Fetch users one by one (GitLab API doesn't have a bulk fetch by multiple IDs easily)
-  // Consider using Promise.allSettled for resilience if one ID fails
   const userPromises = userIds.map(async (id) => {
     try {
       const userUrl = `${GITLAB_API_BASE_URL}/users/${id}`;
-      // Use a separate cache key for individual user fetches
       const userCacheKey = gitlabApiCache.generateKey("fetchUserById", { id });
       if (!skipCache) {
         const cachedUser = gitlabApiCache.get(userCacheKey);
@@ -384,21 +410,20 @@ export async function fetchUsersByIds(
       }
       const user = await gitlabRequest<GitLabUser>(userUrl);
       if (!skipCache) {
-        gitlabApiCache.set(userCacheKey, user, {}); // Cache individual user
+        gitlabApiCache.set(userCacheKey, user, {});
       }
       return user;
     } catch (error) {
       logger.error("Failed to fetch user details for ID", { id, error });
-      return null; // Return null for failed fetches
+      return null;
     }
   });
 
   const results = await Promise.all(userPromises);
   const validUsers = results.filter(
-    (user): user is GitLabUser => user !== null
+    (user): user is GitLabUser => user !== null && user.state === "active"
   );
 
-  // Cache the combined result for the specific set of IDs
   gitlabApiCache.set(cacheKey, validUsers, {});
 
   logger.info(
@@ -410,10 +435,6 @@ export async function fetchUsersByIds(
   return validUsers;
 }
 
-/**
- * Get the list of default team user IDs from environment variables.
- * @returns Array of user IDs.
- */
 export function getTeamUserIds(): number[] {
   const userIds =
     process.env.GITLAB_USER_IDS ||
@@ -441,11 +462,6 @@ export function getTeamUserIds(): number[] {
   }
 }
 
-/**
- * Get the full user objects for the default team.
- * @param skipCache Skip cache and fetch fresh data.
- * @returns Array of default team user objects.
- */
 export async function getDefaultTeamUsers(
   skipCache: boolean = false
 ): Promise<GitLabUser[]> {
@@ -457,7 +473,6 @@ export async function getDefaultTeamUsers(
   return fetchUsersByIds(defaultIds, skipCache);
 }
 
-// --- Team Relevance Checks (Keep as is) ---
 export function isTeamMember(
   user: GitLabUser,
   teamUsers: GitLabUser[]
@@ -481,17 +496,9 @@ export function isTeamRelevantMR(
   return isAuthorTeamMember || hasTeamAssignee || hasTeamReviewer;
 }
 
-// --- MR Fetching (fetchAllTeamMRs - Modified to accept teamUsers) ---
-/**
- * Fetches all pages of merge requests relevant to the provided team from GitLab API.
- * Handles pagination internally and uses caching.
- * @param options - Options for the API call including groupId, state, etc.
- * @param teamUsers - The list of users defining the current team.
- * @returns Promise with all relevant merge requests across all pages.
- */
 export async function fetchAllTeamMRs(
   options: FetchAllTeamMRsOptions,
-  teamUsers: GitLabUser[] // Accept teamUsers directly
+  teamUsers: GitLabUser[]
 ): Promise<{ items: GitLabMR[]; totalItems: number }> {
   const apiToken =
     process.env.GITLAB_API_TOKEN || process.env.NEXT_PUBLIC_GITLAB_API_TOKEN;
@@ -500,7 +507,6 @@ export async function fetchAllTeamMRs(
     throw new Error("GITLAB_API_TOKEN environment variable is not set");
   }
 
-  // Use the provided teamUsers list
   if (!teamUsers || teamUsers.length === 0) {
     logger.warn("No team users provided, returning empty MR list.");
     return { items: [], totalItems: 0 };
@@ -531,15 +537,13 @@ export async function fetchAllTeamMRs(
   };
   const baseEndpoint = `groups/${groupId}/merge_requests`;
 
-  // Cache key for the *entire* dataset (raw, before team filtering)
   const fullDatasetCacheKey = gitlabApiCache.generateKey(
-    `${baseEndpoint}-all-raw`, // Key for raw data
+    `${baseEndpoint}-all-raw`,
     baseCacheKeyParams
   );
 
   let allMRs: GitLabMR[] = [];
 
-  // --- Cache Check for RAW data ---
   if (!skipCache) {
     const cachedRawData = gitlabApiCache.get(fullDatasetCacheKey);
     if (cachedRawData) {
@@ -558,7 +562,6 @@ export async function fetchAllTeamMRs(
     }
   }
 
-  // --- Fetching Logic (Only if raw data not cached) ---
   if (allMRs.length === 0) {
     let currentPage = 1;
     let totalPages = 1;
@@ -577,13 +580,11 @@ export async function fetchAllTeamMRs(
       });
 
       let pageData: GitLabMR[] | null = null;
-      let responseHeaders: Record<string, string | number> = {};
 
       if (!skipCache) {
         const cachedPage = gitlabApiCache.get(pageCacheKey);
         if (cachedPage) {
-          pageData = cachedPage.data;
-          responseHeaders = cachedPage.headers;
+          pageData = cachedPage.data as GitLabMR[];
           logger.debug(
             `Using cached raw page ${currentPage}/${totalPages}`,
             { cacheKey: pageCacheKey },
@@ -599,7 +600,7 @@ export async function fetchAllTeamMRs(
             { cacheKey: pageCacheKey },
             "GitLabAPI"
           );
-          const response = await measurePerformance(
+          const responseData = await measurePerformance(
             `GitLab API Request Page ${currentPage}`,
             () =>
               gitlabRequest<GitLabMR[]>(
@@ -613,19 +614,13 @@ export async function fetchAllTeamMRs(
                 }
               )
           );
-          pageData = response; // Assuming gitlabRequest returns the data array directly
-          // We need headers if we want totalPages, but gitlabRequest doesn't return them.
-          // For simplicity, we might have to fetch page 1 separately to get headers,
-          // or just keep fetching until an empty page is returned.
-          // Let's try the latter approach for now.
+          pageData = responseData;
 
           if (!skipCache) {
-            // Cache the raw page data
             gitlabApiCache.set(pageCacheKey, pageData || [], {});
           }
           retries = 0;
         } catch (error) {
-          // ... (keep existing retry logic) ...
           const axiosError = error as AxiosError;
           logger.error(
             `GitLab API error fetching page ${currentPage}`,
@@ -647,7 +642,7 @@ export async function fetchAllTeamMRs(
               "GitLabAPI"
             );
             await new Promise((resolve) => setTimeout(resolve, delay));
-            continue; // Retry the current page
+            continue;
           } else {
             logger.error(
               `Max retries reached for page ${currentPage}. Aborting fetch.`,
@@ -663,14 +658,13 @@ export async function fetchAllTeamMRs(
 
       if (pageData && pageData.length > 0) {
         allMRs.push(...pageData);
-        // If we don't have totalPages, assume there might be more
-        if (totalPages === 1 && pageData.length === per_page) {
-          totalPages = currentPage + 1; // Guess there's at least one more page
-        } else if (pageData.length < per_page) {
-          totalPages = currentPage; // This must be the last page
+        if (pageData.length === per_page) {
+          if (totalPages === currentPage) totalPages++;
+        } else {
+          totalPages = currentPage;
         }
       } else {
-        totalPages = currentPage - 1; // Empty page means we're done
+        totalPages = currentPage - 1;
       }
       currentPage++;
     }
@@ -681,13 +675,11 @@ export async function fetchAllTeamMRs(
       "GitLabAPI"
     );
 
-    // Cache the full raw dataset if fetched
     if (!skipCache) {
       gitlabApiCache.set(fullDatasetCacheKey, allMRs, {});
     }
   }
 
-  // --- Team Filtering ---
   const teamMRs = allMRs.filter((mr) => isTeamRelevantMR(mr, teamUsers));
   logger.info(
     "Filtered MRs for team relevance",
@@ -695,39 +687,28 @@ export async function fetchAllTeamMRs(
     "GitLabAPI"
   );
 
-  // Note: We are NOT caching the team-filtered result here, as the team can change.
-  // The caching happens at the raw data level (pages and full raw dataset).
-
   return {
     items: teamMRs,
     totalItems: teamMRs.length,
   };
 }
 
-// --- Deprecated Functions (Keep as is) ---
-/**
- * @deprecated Filtering logic moved to UnifiedDataService. Use fetchAllTeamMRs and filter there.
- */
+// --- Deprecated Functions ---
+/** @deprecated */
 export async function fetchTooOldMRs(
   options: FetchTeamMRsOptions
 ): Promise<GitLabMRsResponse> {
   logger.warn("fetchTooOldMRs is deprecated", {}, "GitLabAPI");
   return { items: [], metadata: { currentPage: 1, perPage: 25 } };
 }
-
-/**
- * @deprecated Filtering logic moved to UnifiedDataService. Use fetchAllTeamMRs and filter there.
- */
+/** @deprecated */
 export async function fetchNotUpdatedMRs(
   options: FetchTeamMRsOptions
 ): Promise<GitLabMRsResponse> {
   logger.warn("fetchNotUpdatedMRs is deprecated", {}, "GitLabAPI");
   return { items: [], metadata: { currentPage: 1, perPage: 25 } };
 }
-
-/**
- * @deprecated Filtering logic moved to UnifiedDataService. Use fetchAllTeamMRs and filter there.
- */
+/** @deprecated */
 export async function fetchPendingReviewMRs(
   options: FetchTeamMRsOptions
 ): Promise<GitLabMRsResponse> {
