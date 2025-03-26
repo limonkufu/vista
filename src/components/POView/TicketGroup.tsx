@@ -4,6 +4,8 @@ import {
   ChevronRight,
   ExternalLink,
   MessageSquare,
+  Check,
+  Flag,
 } from "lucide-react";
 import {
   Card,
@@ -23,6 +25,12 @@ import {
 import { JiraTicketWithMRs } from "@/types/Jira";
 import { JiraTicketStatus } from "@/types/Jira";
 import { MRRow } from "./MRRow";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"; // Import Tooltip
 
 // Helper function to get status color
 const getStatusColor = (status: JiraTicketStatus): string => {
@@ -45,32 +53,49 @@ const getStatusColor = (status: JiraTicketStatus): string => {
 interface TicketGroupProps {
   ticketWithMRs: JiraTicketWithMRs;
   isExpanded?: boolean;
+  isReviewed: boolean; // Add isReviewed prop
+  isFlagged: boolean; // Add isFlagged prop
+  onToggleReviewed: (ticketKey: string) => void; // Add callback prop
+  onToggleFlagged: (ticketKey: string) => void; // Add callback prop
 }
 
 export function TicketGroup({
   ticketWithMRs,
   isExpanded = false,
+  isReviewed, // Destructure props
+  isFlagged,
+  onToggleReviewed,
+  onToggleFlagged,
 }: TicketGroupProps) {
   const [isOpen, setIsOpen] = useState(isExpanded);
   const { ticket, mrs, openMRs, stalledMRs } = ticketWithMRs;
 
-  // Mark as reviewed (would be connected to real functionality in Phase 3)
+  // FIX: Use callbacks passed from parent
   const handleMarkReviewed = (e: React.MouseEvent) => {
     e.stopPropagation();
-    // This would be implemented in Phase 3
-    console.log(`Marked ticket ${ticket.key} as reviewed`);
+    onToggleReviewed(ticket.key);
   };
 
-  // Flag for follow-up (would be connected to real functionality in Phase 3)
   const handleFlagFollowUp = (e: React.MouseEvent) => {
     e.stopPropagation();
-    // This would be implemented in Phase 3
-    console.log(`Flagged ticket ${ticket.key} for follow-up`);
+    onToggleFlagged(ticket.key);
   };
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className="mb-4">
-      <Card className={isOpen ? "border-primary" : ""}>
+      <Card
+        className={`
+        ${isOpen ? "border-primary" : ""}
+        border-l-4
+        ${
+          isReviewed
+            ? "border-l-green-500"
+            : isFlagged
+            ? "border-l-amber-500"
+            : "border-l-transparent"
+        }
+      `}
+      >
         <CollapsibleTrigger asChild>
           <CardHeader className="cursor-pointer hover:bg-accent/50">
             <div className="flex items-center justify-between">
@@ -89,18 +114,18 @@ export function TicketGroup({
                 <Badge className={getStatusColor(ticket.status)}>
                   {ticket.status}
                 </Badge>
-                {openMRs > 0 && (
+                {openMRs !== undefined && openMRs > 0 && (
                   <Badge variant="secondary">
                     {openMRs} Open MR{openMRs !== 1 ? "s" : ""}
                   </Badge>
                 )}
-                {stalledMRs > 0 && (
+                {stalledMRs !== undefined && stalledMRs > 0 && (
                   <Badge variant="destructive">{stalledMRs} Stalled</Badge>
                 )}
               </div>
             </div>
 
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center mt-2">
               <CardDescription className="pt-2">
                 {ticket.type} •{" "}
                 {ticket.assignee
@@ -108,27 +133,72 @@ export function TicketGroup({
                   : "Unassigned"}{" "}
                 • Story Points: {ticket.storyPoints || "N/A"}
               </CardDescription>
-              <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                <Button variant="ghost" size="sm" onClick={handleMarkReviewed}>
-                  Mark Reviewed
-                </Button>
-                <Button variant="ghost" size="sm" onClick={handleFlagFollowUp}>
-                  Flag for Follow-up
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex gap-1"
-                  asChild
-                >
-                  <a
-                    href={ticket.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Jira <ExternalLink className="h-3 w-3" />
-                  </a>
-                </Button>
+              {/* FIX: Unified action buttons in header */}
+              <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant={isReviewed ? "secondary" : "ghost"}
+                        size="icon"
+                        onClick={handleMarkReviewed}
+                        className="h-7 w-7"
+                      >
+                        <Check
+                          className={`h-4 w-4 ${
+                            isReviewed ? "text-green-600" : ""
+                          }`}
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {isReviewed ? "Mark as Unreviewed" : "Mark as Reviewed"}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant={isFlagged ? "secondary" : "ghost"}
+                        size="icon"
+                        onClick={handleFlagFollowUp}
+                        className="h-7 w-7"
+                      >
+                        <Flag
+                          className={`h-4 w-4 ${
+                            isFlagged ? "text-amber-600" : ""
+                          }`}
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {isFlagged ? "Remove Flag" : "Flag for Follow-up"}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      {/* FIX: Ensure Jira link uses ticket.url */}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        asChild
+                      >
+                        <a
+                          href={ticket.url} // Use the URL from the ticket object
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>View in Jira</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             </div>
           </CardHeader>
@@ -139,6 +209,7 @@ export function TicketGroup({
             {mrs && mrs.length > 0 ? (
               <div className="space-y-3">
                 {mrs.map((mr) => (
+                  // Pass down review/flag status if MRRow needs it later
                   <MRRow key={mr.id} mr={mr} />
                 ))}
               </div>

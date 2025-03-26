@@ -4,7 +4,7 @@ import {
   GitLabMR,
   GitLabMRsResponse,
   FetchAllTeamMRsOptions,
-  getTeamUserIds, // <--- ADD THIS IMPORT
+  getTeamUserIds,
 } from "@/lib/gitlab";
 import {
   JiraTicket,
@@ -39,8 +39,9 @@ const processedDataCache: Record<
   }
 > = {};
 
-// Default cache TTL in milliseconds (5 minutes)
+// Default cache TTL in milliseconds (using constant from cacheConfig)
 const DEFAULT_CACHE_TTL = TTL_MS.PROCESSED_DATA;
+// FIX: Removed duplicate declaration: const DEFAULT_CACHE_TTL = 60 * 60 * 1000;
 
 // Generate a consistent cache key based on operation and options
 function generateCacheKey(operation: string, options?: any): string {

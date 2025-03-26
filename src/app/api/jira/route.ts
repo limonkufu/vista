@@ -39,7 +39,7 @@ const jira = new JiraApi({
   host: jiraHost, // Use the variable, ensure it's just the hostname
   username: jiraEmail,
   password: process.env.JIRA_API_TOKEN as string, // Token used as password
-  apiVersion: "3",
+  apiVersion: "2",
   strictSSL: true,
 });
 // --- End Jira Client Initialization ---

@@ -1,5 +1,6 @@
+// File: src/lib/jiraCache.ts
 import { logger } from "./logger";
-import { TTL_SECONDS } from "./cacheConfig";
+import { TTL_SECONDS } from "./cacheConfig"; // Import the constant
 
 /**
  * Interface for cached Jira API response
@@ -21,8 +22,9 @@ class JiraAPICache {
    * Creates a new Jira API cache
    * @param ttlSeconds Default TTL in seconds
    */
+  // FIX: Changed default value from '00' to the constant TTL_SECONDS.JIRA_API
   constructor(ttlSeconds: number = TTL_SECONDS.JIRA_API) {
-    // Default TTL for Jira API calls
+    // Default TTL for Jira API calls (TTL_SECONDS.JIRA_API is 900s = 15 minutes)
     this.defaultTTL = ttlSeconds * 1000;
     logger.debug("Created Jira API cache", { ttlSeconds }, "JiraAPICache");
   }

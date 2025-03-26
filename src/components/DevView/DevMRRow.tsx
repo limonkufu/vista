@@ -22,6 +22,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import Link from "next/link"; // Import Link
 
 // Helper function to format date as time ago
 function timeAgo(dateString: string): string {
@@ -166,14 +167,17 @@ export function DevMRRow({ mr, statusCategory }: DevMRRowProps) {
   return (
     <Card
       className={`
-      border-l-4 
+      border-l-4
       ${isUrgent ? "border-l-red-500" : "border-l-transparent"}
     `}
     >
       <CardContent className="py-4">
         <div className="flex justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <GitPullRequest className="h-4 w-4 text-primary" />
+          <div className="flex items-center gap-2 flex-wrap">
+            {" "}
+            {/* Added flex-wrap */}
+            <GitPullRequest className="h-4 w-4 text-primary shrink-0" />{" "}
+            {/* Added shrink-0 */}
             <h3 className="font-medium">
               <a
                 href={mr.web_url}
@@ -184,11 +188,30 @@ export function DevMRRow({ mr, statusCategory }: DevMRRowProps) {
                 {mr.title}
               </a>
             </h3>
-            {mr.jiraTicketKey && (
+            {/* FIX: Make Jira key clickable */}
+            {mr.jiraTicketKey && mr.jiraTicket?.url && (
+              <Link
+                href={mr.jiraTicket.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                passHref
+                legacyBehavior // Needed for wrapping Badge
+              >
+                <Badge
+                  variant="outline"
+                  className="cursor-pointer hover:bg-accent"
+                >
+                  {mr.jiraTicketKey} <ExternalLink className="h-3 w-3 ml-1" />
+                </Badge>
+              </Link>
+            )}
+            {mr.jiraTicketKey && !mr.jiraTicket?.url && (
               <Badge variant="outline">{mr.jiraTicketKey}</Badge>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
+            {" "}
+            {/* Added shrink-0 */}
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -208,7 +231,6 @@ export function DevMRRow({ mr, statusCategory }: DevMRRowProps) {
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-
             {getCIStatusIndicator()}
           </div>
         </div>
