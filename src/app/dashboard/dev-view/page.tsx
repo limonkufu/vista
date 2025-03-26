@@ -29,7 +29,9 @@ export default function DevViewPage() {
 
   // If feature is not enabled, show a message (should be redirected by useEffect)
   if (!isDevViewEnabled || !areRoleBasedViewsEnabled) {
-    return <div className="p-8">This view is not currently available.</div>;
+    return (
+      <div className="space-y-6">This view is not currently available.</div>
+    );
   }
 
   return <DevView />;

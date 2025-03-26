@@ -24,6 +24,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { MRRow } from "@/components/POView/MRRow";
+import React from "react";
 
 // Helper function to get status color
 const getStatusColor = (status: JiraTicketStatus): string => {
@@ -126,137 +127,124 @@ export function TicketSummaryTable({
             </TableRow>
           ) : (
             sortedTickets.map((ticketWithMRs) => (
-              <Collapsible
-                key={ticketWithMRs.ticket.id}
-                open={isRowExpanded(ticketWithMRs.ticket.id)}
-                onOpenChange={() => toggleRow(ticketWithMRs.ticket.id)}
-                asChild
-              >
-                <>
-                  <TableRow
-                    className={`
-                      group hover:bg-muted/50 cursor-pointer
-                      ${
-                        ticketWithMRs.ticket.status === JiraTicketStatus.BLOCKED
-                          ? "bg-red-50 dark:bg-red-950/20"
-                          : ""
-                      }
-                      ${
-                        ticketWithMRs.overdueMRs > 0
-                          ? "bg-amber-50 dark:bg-amber-950/20"
-                          : ""
-                      }
-                    `}
-                    onClick={() => toggleRow(ticketWithMRs.ticket.id)}
-                  >
-                    <TableCell>
-                      <CollapsibleTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 p-0"
-                        >
-                          {isRowExpanded(ticketWithMRs.ticket.id) ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </CollapsibleTrigger>
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      <a
-                        href={ticketWithMRs.ticket.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:underline flex items-center gap-1"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {ticketWithMRs.ticket.key}
-                        <ExternalLink className="h-3 w-3 inline" />
-                      </a>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {ticketWithMRs.ticket.title}
-                        {(ticketWithMRs.ticket.status ===
-                          JiraTicketStatus.BLOCKED ||
-                          ticketWithMRs.overdueMRs > 0) && (
-                          <AlertTriangle className="h-4 w-4 text-amber-500" />
-                        )}
+              <React.Fragment key={ticketWithMRs.ticket.id}>
+                <TableRow
+                  className={`
+                    group hover:bg-muted/50 cursor-pointer
+                    ${
+                      ticketWithMRs.ticket.status === JiraTicketStatus.BLOCKED
+                        ? "bg-red-50 dark:bg-red-950/20"
+                        : ""
+                    }
+                    ${
+                      ticketWithMRs.overdueMRs > 0
+                        ? "bg-amber-50 dark:bg-amber-950/20"
+                        : ""
+                    }
+                  `}
+                  onClick={() => toggleRow(ticketWithMRs.ticket.id)}
+                >
+                  <TableCell>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 p-0">
+                      {isRowExpanded(ticketWithMRs.ticket.id) ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    <a
+                      href={ticketWithMRs.ticket.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:underline flex items-center gap-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {ticketWithMRs.ticket.key}
+                      <ExternalLink className="h-3 w-3 inline" />
+                    </a>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {ticketWithMRs.ticket.title}
+                      {(ticketWithMRs.ticket.status ===
+                        JiraTicketStatus.BLOCKED ||
+                        ticketWithMRs.overdueMRs > 0) && (
+                        <AlertTriangle className="h-4 w-4 text-amber-500" />
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      className={getStatusColor(ticketWithMRs.ticket.status)}
+                    >
+                      {ticketWithMRs.ticket.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {ticketWithMRs.totalMRs}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {ticketWithMRs.openMRs}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {ticketWithMRs.overdueMRs > 0 ? (
+                      <Badge variant="destructive">
+                        {ticketWithMRs.overdueMRs}
+                      </Badge>
+                    ) : (
+                      0
+                    )}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {ticketWithMRs.stalledMRs > 0 ? (
+                      <Badge variant="warning" className="bg-amber-500">
+                        {ticketWithMRs.stalledMRs}
+                      </Badge>
+                    ) : (
+                      0
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex gap-1"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleRow(ticketWithMRs.ticket.id);
+                      }}
+                    >
+                      {isRowExpanded(ticketWithMRs.ticket.id)
+                        ? "Hide Details"
+                        : "View Details"}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+
+                {isRowExpanded(ticketWithMRs.ticket.id) && (
+                  <TableRow>
+                    <TableCell colSpan={9} className="p-0">
+                      <div className="bg-muted/50 px-4 py-3">
+                        <Card className="overflow-hidden">
+                          <div className="space-y-3 p-4">
+                            {ticketWithMRs.mrs.length > 0 ? (
+                              ticketWithMRs.mrs.map((mr) => (
+                                <MRRow key={mr.id} mr={mr} />
+                              ))
+                            ) : (
+                              <div className="text-center py-4 text-muted-foreground">
+                                No merge requests found for this ticket
+                              </div>
+                            )}
+                          </div>
+                        </Card>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <Badge
-                        className={getStatusColor(ticketWithMRs.ticket.status)}
-                      >
-                        {ticketWithMRs.ticket.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {ticketWithMRs.totalMRs}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {ticketWithMRs.openMRs}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {ticketWithMRs.overdueMRs > 0 ? (
-                        <Badge variant="destructive">
-                          {ticketWithMRs.overdueMRs}
-                        </Badge>
-                      ) : (
-                        0
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {ticketWithMRs.stalledMRs > 0 ? (
-                        <Badge variant="warning" className="bg-amber-500">
-                          {ticketWithMRs.stalledMRs}
-                        </Badge>
-                      ) : (
-                        0
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex gap-1"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleRow(ticketWithMRs.ticket.id);
-                        }}
-                      >
-                        {isRowExpanded(ticketWithMRs.ticket.id)
-                          ? "Hide Details"
-                          : "View Details"}
-                      </Button>
-                    </TableCell>
                   </TableRow>
-
-                  <CollapsibleContent asChild>
-                    <TableRow>
-                      <TableCell colSpan={9} className="p-0">
-                        <div className="bg-muted/50 px-4 py-3">
-                          <Card className="overflow-hidden">
-                            <div className="space-y-3 p-4">
-                              {ticketWithMRs.mergeRequests.length > 0 ? (
-                                ticketWithMRs.mergeRequests.map((mr) => (
-                                  <MRRow key={mr.id} mr={mr} />
-                                ))
-                              ) : (
-                                <div className="text-center py-4 text-muted-foreground">
-                                  No merge requests found for this ticket
-                                </div>
-                              )}
-                            </div>
-                          </Card>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  </CollapsibleContent>
-                </>
-              </Collapsible>
+                )}
+              </React.Fragment>
             ))
           )}
         </TableBody>

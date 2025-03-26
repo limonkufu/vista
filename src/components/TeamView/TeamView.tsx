@@ -31,7 +31,7 @@ export function TeamView({}: TeamViewProps) {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState<TeamViewTab>("overview");
-  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
   // Mock loading the tickets and MRs
   useEffect(() => {
@@ -46,7 +46,10 @@ export function TeamView({}: TeamViewProps) {
         // Get Jira tickets with MRs
         const ticketsData = await jiraService.getTicketsWithMRs({
           search: searchTerm,
-          statuses: statusFilter ? [statusFilter as any] : undefined,
+          statuses:
+            statusFilter && statusFilter !== "all"
+              ? [statusFilter as any]
+              : undefined,
         });
 
         // Get all MRs with Jira info
@@ -81,7 +84,10 @@ export function TeamView({}: TeamViewProps) {
       Promise.all([
         jiraService.getTicketsWithMRs({
           search: searchTerm,
-          statuses: statusFilter ? [statusFilter as any] : undefined,
+          statuses:
+            statusFilter && statusFilter !== "all"
+              ? [statusFilter as any]
+              : undefined,
           skipCache: true,
         }),
         jiraService.getMergeRequestsWithJira(true),
@@ -140,12 +146,15 @@ export function TeamView({}: TeamViewProps) {
 
         {activeTab === "tickets" && (
           <div className="flex gap-2">
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select
+              value={statusFilter || "all"}
+              onValueChange={setStatusFilter}
+            >
               <SelectTrigger className="w-[160px]">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Statuses</SelectItem>
+                <SelectItem value="all">All Statuses</SelectItem>
                 <SelectItem value="To Do">To Do</SelectItem>
                 <SelectItem value="In Progress">In Progress</SelectItem>
                 <SelectItem value="In Review">In Review</SelectItem>

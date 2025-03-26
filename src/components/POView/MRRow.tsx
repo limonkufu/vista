@@ -104,7 +104,7 @@ export function MRRow({ mr }: MRRowProps) {
           <div className="flex items-center gap-2">
             <TooltipProvider>
               <Tooltip>
-                <TooltipTrigger asChild>
+                <TooltipTrigger>
                   <div className="flex items-center gap-1 text-sm text-muted-foreground">
                     <Clock className="h-3 w-3" />
                     <span>{timeAgo(mr.updated_at)}</span>
@@ -149,7 +149,7 @@ export function MRRow({ mr }: MRRowProps) {
                 mr.reviewers.slice(0, 3).map((reviewer) => (
                   <TooltipProvider key={reviewer.id}>
                     <Tooltip>
-                      <TooltipTrigger asChild>
+                      <TooltipTrigger>
                         <Avatar className="h-5 w-5 border border-background">
                           <AvatarImage
                             src={reviewer.avatar_url}
