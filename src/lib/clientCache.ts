@@ -5,6 +5,7 @@
  */
 
 import { GitLabMR } from "@/lib/gitlab";
+import { TTL_MS } from "./cacheConfig";
 
 interface CachedData<T> {
   data: T;
@@ -24,7 +25,7 @@ interface MRResponseData {
 }
 
 // Cache TTL in milliseconds (e.g., 60 minute for client-side)
-const CACHE_TTL = 60 * 1000 * 60;
+const CACHE_TTL = TTL_MS.CLIENT;
 
 // Global cache storage (will persist between page navigations within the same session)
 const globalCache: Record<string, CachedData<any>> = {};

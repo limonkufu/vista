@@ -1,6 +1,7 @@
 // src/lib/gitlabCache.ts
 import { logger } from "./logger";
 import { GitLabMR } from "./gitlab";
+import { TTL_SECONDS } from "./cacheConfig";
 
 /**
  * Interface for cached GitLab API response
@@ -23,8 +24,8 @@ class GitLabAPICache {
    * Creates a new GitLab API cache
    * @param ttlSeconds Default TTL in seconds
    */
-  constructor(ttlSeconds: number = 900) {
-    // Default 5 minute TTL for GitLab API calls
+  constructor(ttlSeconds: number = TTL_SECONDS.GITLAB_API) {
+    // Default TTL for GitLab API calls
     this.defaultTTL = ttlSeconds * 1000;
     logger.debug("Created GitLab API cache", { ttlSeconds }, "GitLabAPICache");
   }
