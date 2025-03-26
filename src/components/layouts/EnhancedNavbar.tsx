@@ -8,6 +8,7 @@ import { ViewType, DASHBOARD_VIEWS } from "@/types/ViewTypes";
 import { useLayout } from "@/contexts/LayoutContext";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
+import { Logo } from "@/components/Logo";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,9 +61,10 @@ export function EnhancedNavbar() {
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-14 items-center">
         {/* Logo */}
+        <Logo size="lg" useImage />
         <div className="mr-4 flex">
           <Link href="/dashboard" className="flex items-center space-x-2">
-            <span className="font-bold">GitLab MR Dashboard</span>
+            <span className="font-bold">VISTA</span>
           </Link>
         </div>
 

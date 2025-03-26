@@ -1,0 +1,24 @@
+{
+  "name": "VISTA - Vibe Into Software Tasks & Activities",
+  "short_name": "VISTA",
+  "description": "A context-aware work management dashboard that transforms traditional project tracking into an intuitive, vibe-based experience.",
+  "icons": [
+    {
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "theme_color": "#F3F4F6",
+  "background_color": "#F3F4F6",
+  "display": "standalone",
+  "start_url": "/",
+  "orientation": "portrait",
+  "scope": "/",
+  "lang": "en"
+}

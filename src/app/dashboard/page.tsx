@@ -58,7 +58,7 @@ export default function DashboardPage() {
     return (
       <div className="container py-8 space-y-8">
         <div className="max-w-3xl mx-auto text-center space-y-4">
-          <Logo size="lg" />
+          <Logo size="lg" useImage />
           <p className="text-xl text-muted-foreground">Loading...</p>
         </div>
       </div>
@@ -75,7 +75,6 @@ export default function DashboardPage() {
             <div className="absolute inset-0 bg-grid-pattern opacity-5" />
             <div className="container relative py-20">
               <div className="max-w-3xl mx-auto text-center space-y-6">
-                <Logo size="lg" />
                 <h2 className="text-2xl font-semibold text-muted-foreground">
                   Vibe Into Software Tasks & Activities
                 </h2>

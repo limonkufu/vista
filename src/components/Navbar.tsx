@@ -52,7 +52,7 @@ export const Navbar: NavbarComponent = function Navbar() {
       <div className="container flex h-14 items-center">
         <div className="mr-4 flex">
           <Link href="/dashboard" className="flex items-center space-x-2">
-            <Logo size="sm" />
+            <Logo size="sm" useImage />
           </Link>
         </div>
         <nav className="flex-1">
