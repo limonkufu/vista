@@ -4,6 +4,7 @@ import {
   GitLabMR,
   GitLabMRsResponse,
   FetchAllTeamMRsOptions,
+  getTeamUserIds, // <--- ADD THIS IMPORT
 } from "@/lib/gitlab";
 import {
   JiraTicket,
@@ -15,7 +16,7 @@ import { jiraService } from "./JiraServiceFactory";
 import { mrJiraAssociationService } from "./MRJiraAssociationService";
 import { logger } from "@/lib/logger";
 import { thresholds } from "@/lib/config";
-import { gitlabApiCache } from "@/lib/gitlabCache"; // Import gitlabApiCache
+import { gitlabApiCache } from "@/lib/gitlabCache";
 
 // Type for unified response data (kept for hook compatibility)
 export interface UnifiedDataResponse<T> {
@@ -38,7 +39,7 @@ const processedDataCache: Record<
 > = {};
 
 // Default cache TTL in milliseconds (5 minutes)
-const DEFAULT_CACHE_TTL = 5 * 60 * 1000;
+const DEFAULT_CACHE_TTL = 60 * 60 * 1000;
 
 // Generate a consistent cache key based on operation and options
 function generateCacheKey(operation: string, options?: any): string {
@@ -405,7 +406,7 @@ class UnifiedDataService {
       const baseMRs = await this._getBaseMRs({ skipCache });
       const thresholdDate = new Date();
       thresholdDate.setDate(thresholdDate.getDate() - threshold);
-      const teamUserIds = getTeamUserIds();
+      const teamUserIds = getTeamUserIds(); // Now defined due to import
 
       const filteredMRs = baseMRs.filter((mr) => {
         const isTeamReviewer = mr.reviewers.some((reviewer) =>

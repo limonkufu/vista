@@ -23,7 +23,7 @@ class GitLabAPICache {
    * Creates a new GitLab API cache
    * @param ttlSeconds Default TTL in seconds
    */
-  constructor(ttlSeconds: number = 300) {
+  constructor(ttlSeconds: number = 900) {
     // Default 5 minute TTL for GitLab API calls
     this.defaultTTL = ttlSeconds * 1000;
     logger.debug("Created GitLab API cache", { ttlSeconds }, "GitLabAPICache");

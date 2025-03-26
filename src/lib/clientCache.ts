@@ -23,7 +23,7 @@ interface MRResponseData {
   };
 }
 
-// Cache TTL in milliseconds (e.g., 1 minute for client-side)
+// Cache TTL in milliseconds (e.g., 60 minute for client-side)
 const CACHE_TTL = 60 * 1000 * 60;
 
 // Global cache storage (will persist between page navigations within the same session)
