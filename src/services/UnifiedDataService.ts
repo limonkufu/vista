@@ -1,19 +1,9 @@
-/**
- * Unified Data Service
- *
- * Centralizes data fetching for both GitLab MRs and Jira tickets.
- * Implements efficient caching and provides data transformation
- * methods for different views while maintaining backward compatibility.
- */
-
+// File: src/services/UnifiedDataService.ts
 import {
-  fetchTeamMRs,
-  fetchTooOldMRs,
-  fetchNotUpdatedMRs,
-  fetchPendingReviewMRs,
+  fetchAllTeamMRs,
   GitLabMR,
   GitLabMRsResponse,
-  FetchTeamMRsOptions,
+  FetchAllTeamMRsOptions,
 } from "@/lib/gitlab";
 import {
   JiraTicket,
@@ -22,20 +12,23 @@ import {
   GitLabMRWithJira,
 } from "@/types/Jira";
 import { jiraService } from "./JiraServiceFactory";
+import { mrJiraAssociationService } from "./MRJiraAssociationService";
 import { logger } from "@/lib/logger";
+import { thresholds } from "@/lib/config";
+import { gitlabApiCache } from "@/lib/gitlabCache"; // Import gitlabApiCache
 
-// Type for unified response data
+// Type for unified response data (kept for hook compatibility)
 export interface UnifiedDataResponse<T> {
   data: T;
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
   lastRefreshed?: string;
-  refetch: () => Promise<void>;
+  refetch: (options?: { skipCache?: boolean }) => Promise<void>; // Allow forcing refresh
 }
 
-// Cache for the unified data
-const dataCache: Record<
+// Internal cache for processed/filtered data within this service
+const processedDataCache: Record<
   string,
   {
     data: any;
@@ -49,7 +42,18 @@ const DEFAULT_CACHE_TTL = 5 * 60 * 1000;
 
 // Generate a consistent cache key based on operation and options
 function generateCacheKey(operation: string, options?: any): string {
-  const optionsStr = options ? JSON.stringify(options) : "";
+  const sortedOptions = options
+    ? Object.keys(options)
+        .sort()
+        .reduce((obj, key) => {
+          // Exclude skipCache from the key itself
+          if (key !== "skipCache") {
+            obj[key] = options[key];
+          }
+          return obj;
+        }, {} as any)
+    : {};
+  const optionsStr = JSON.stringify(sortedOptions);
   return `${operation}:${optionsStr}`;
 }
 
@@ -57,7 +61,7 @@ function generateCacheKey(operation: string, options?: any): string {
  * Check if cached data is still valid
  */
 function isCacheValid(key: string): boolean {
-  const cached = dataCache[key];
+  const cached = processedDataCache[key];
   if (!cached) return false;
   return Date.now() < cached.validUntil;
 }
@@ -67,8 +71,10 @@ function isCacheValid(key: string): boolean {
  */
 function getFromCache<T>(key: string): T | null {
   if (isCacheValid(key)) {
-    return dataCache[key].data as T;
+    logger.debug("Processed data cache hit", { key }, "UnifiedDataService");
+    return processedDataCache[key].data as T;
   }
+  logger.debug("Processed data cache miss", { key }, "UnifiedDataService");
   return null;
 }
 
@@ -81,278 +87,562 @@ function setInCache<T>(
   ttl: number = DEFAULT_CACHE_TTL
 ): void {
   const now = Date.now();
-  dataCache[key] = {
+  processedDataCache[key] = {
     data,
     timestamp: now,
     validUntil: now + ttl,
   };
+  logger.debug("Stored processed data in cache", { key }, "UnifiedDataService");
 }
 
 /**
  * Clear cache for a specific key or pattern
  */
-function invalidateCache(keyPattern: string): void {
-  Object.keys(dataCache).forEach((key) => {
-    if (key.includes(keyPattern)) {
-      delete dataCache[key];
-    }
-  });
+function invalidateCache(keyPattern?: string): void {
+  if (keyPattern) {
+    Object.keys(processedDataCache).forEach((key) => {
+      if (key.startsWith(keyPattern)) {
+        delete processedDataCache[key];
+      }
+    });
+    logger.info(`Invalidated processed data cache for pattern: ${keyPattern}`);
+  } else {
+    Object.keys(processedDataCache).forEach((key) => {
+      delete processedDataCache[key];
+    });
+    logger.info("Invalidated all processed data cache");
+  }
+  // Also invalidate the association service cache as base data changed
+  mrJiraAssociationService.invalidateCache();
 }
 
 class UnifiedDataService {
+  // --- Private Helper Methods ---
+
   /**
-   * Fetch MRs that are too old
+   * Fetches the base set of all relevant team MRs, using GitLab cache.
+   */
+  private async _getBaseMRs(
+    options: Omit<FetchAllTeamMRsOptions, "groupId"> & {
+      skipCache?: boolean;
+    } = {}
+  ): Promise<GitLabMR[]> {
+    const groupId =
+      process.env.NEXT_PUBLIC_GITLAB_GROUP_ID ||
+      process.env.GITLAB_GROUP_ID ||
+      "";
+    if (!groupId) throw new Error("GITLAB_GROUP_ID not set");
+
+    const fetchOptions: FetchAllTeamMRsOptions = {
+      groupId,
+      state: options.state || "opened",
+      include_subgroups: options.include_subgroups ?? true,
+      skipCache: options.skipCache ?? false, // Pass skipCache to the underlying fetch
+    };
+
+    // Use a cache key specific to the base fetch operation within this service
+    // This service cache is for the *result* of fetchAllTeamMRs, which itself uses gitlabApiCache
+    const cacheKey = generateCacheKey("baseMRs", fetchOptions);
+
+    if (!fetchOptions.skipCache) {
+      const cached = getFromCache<GitLabMR[]>(cacheKey);
+      if (cached) return cached;
+    }
+
+    try {
+      // fetchAllTeamMRs handles its own caching via gitlabApiCache
+      const result = await fetchAllTeamMRs(fetchOptions);
+      setInCache(cacheKey, result.items); // Cache the base items in this service's cache
+      return result.items;
+    } catch (error) {
+      logger.error("Failed to fetch base MRs", { error }, "UnifiedDataService");
+      throw error;
+    }
+  }
+
+  /**
+   * Fetches or retrieves cached base MRs and enriches them with Jira data.
+   */
+  private async _getEnrichedMRs(
+    options: Omit<FetchAllTeamMRsOptions, "groupId"> & {
+      skipCache?: boolean;
+    } = {}
+  ): Promise<GitLabMRWithJira[]> {
+    const cacheKey = generateCacheKey("enrichedMRs", options);
+
+    if (!options.skipCache) {
+      const cached = getFromCache<GitLabMRWithJira[]>(cacheKey);
+      if (cached) return cached;
+    }
+
+    try {
+      // Pass skipCache down to get fresh base MRs if needed
+      const baseMRs = await this._getBaseMRs(options);
+      const enrichedMRs = await mrJiraAssociationService.enhanceMRsWithJira(
+        baseMRs
+      );
+      setInCache(cacheKey, enrichedMRs);
+      return enrichedMRs;
+    } catch (error) {
+      logger.error(
+        "Failed to get enriched MRs",
+        { error },
+        "UnifiedDataService"
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Applies pagination to a list of items.
+   */
+  private _paginateItems<T>(
+    items: T[],
+    page: number = 1,
+    per_page: number = 25
+  ): { paginatedItems: T[]; totalItems: number; totalPages: number } {
+    const totalItems = items.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / per_page));
+    const startIdx = (page - 1) * per_page;
+    const endIdx = Math.min(startIdx + per_page, totalItems);
+    const paginatedItems = items.slice(startIdx, endIdx);
+    return { paginatedItems, totalItems, totalPages };
+  }
+
+  // --- Public Data Fetching Methods ---
+
+  /**
+   * Fetch MRs that are too old (filtered internally).
    */
   async fetchTooOldMRs(
-    options?: Omit<FetchTeamMRsOptions, "groupId">
+    options: {
+      page?: number;
+      per_page?: number;
+      skipCache?: boolean; // Added skipCache option
+    } = {}
   ): Promise<GitLabMRsResponse> {
-    const groupId = process.env.GITLAB_GROUP_ID || "";
-    const mergedOptions: FetchTeamMRsOptions = { groupId, ...options };
-    const cacheKey = generateCacheKey("tooOldMRs", mergedOptions);
+    const { page = 1, per_page = 25, skipCache = false } = options;
+    const threshold = thresholds.TOO_OLD_THRESHOLD;
+    // Cache key for the *filtered* result
+    const cacheKey = generateCacheKey("filteredTooOldMRs", { threshold });
 
-    const cached = getFromCache<GitLabMRsResponse>(cacheKey);
-    if (cached) {
-      logger.info("Using cached too old MRs data", { cacheKey });
-      return cached;
+    if (!skipCache) {
+      const cached = getFromCache<GitLabMR[]>(cacheKey);
+      if (cached) {
+        const { paginatedItems, totalItems, totalPages } = this._paginateItems(
+          cached,
+          page,
+          per_page
+        );
+        return {
+          items: paginatedItems,
+          metadata: {
+            threshold,
+            currentPage: page,
+            perPage: per_page,
+            totalItems,
+            totalPages,
+            lastRefreshed: new Date().toISOString(), // Reflects cache time
+          },
+        };
+      }
     }
 
     try {
-      const response = await fetchTooOldMRs(mergedOptions);
-      setInCache(cacheKey, response);
-      return response;
+      // Pass skipCache to get fresh base data if needed
+      const baseMRs = await this._getBaseMRs({ skipCache });
+      const thresholdDate = new Date();
+      thresholdDate.setDate(thresholdDate.getDate() - threshold);
+
+      const filteredMRs = baseMRs.filter((mr) => {
+        const createdDate = new Date(mr.created_at);
+        return createdDate < thresholdDate;
+      });
+
+      setInCache(cacheKey, filteredMRs); // Cache the filtered list
+
+      const { paginatedItems, totalItems, totalPages } = this._paginateItems(
+        filteredMRs,
+        page,
+        per_page
+      );
+
+      return {
+        items: paginatedItems,
+        metadata: {
+          threshold,
+          currentPage: page,
+          perPage: per_page,
+          totalItems,
+          totalPages,
+          lastRefreshed: new Date().toISOString(),
+        },
+      };
     } catch (error) {
-      logger.error("Error fetching too old MRs", { error });
+      logger.error(
+        "Error fetching too old MRs",
+        { error },
+        "UnifiedDataService"
+      );
       throw error;
     }
   }
 
   /**
-   * Fetch MRs that haven't been updated recently
+   * Fetch MRs that haven't been updated recently (filtered internally).
    */
   async fetchNotUpdatedMRs(
-    options?: Omit<FetchTeamMRsOptions, "groupId">
+    options: {
+      page?: number;
+      per_page?: number;
+      skipCache?: boolean; // Added skipCache option
+    } = {}
   ): Promise<GitLabMRsResponse> {
-    const groupId = process.env.GITLAB_GROUP_ID || "";
-    const mergedOptions: FetchTeamMRsOptions = { groupId, ...options };
-    const cacheKey = generateCacheKey("notUpdatedMRs", mergedOptions);
+    const { page = 1, per_page = 25, skipCache = false } = options;
+    const threshold = thresholds.NOT_UPDATED_THRESHOLD;
+    const cacheKey = generateCacheKey("filteredNotUpdatedMRs", { threshold });
 
-    const cached = getFromCache<GitLabMRsResponse>(cacheKey);
-    if (cached) {
-      logger.info("Using cached not updated MRs data", { cacheKey });
-      return cached;
+    if (!skipCache) {
+      const cached = getFromCache<GitLabMR[]>(cacheKey);
+      if (cached) {
+        const { paginatedItems, totalItems, totalPages } = this._paginateItems(
+          cached,
+          page,
+          per_page
+        );
+        return {
+          items: paginatedItems,
+          metadata: {
+            threshold,
+            currentPage: page,
+            perPage: per_page,
+            totalItems,
+            totalPages,
+            lastRefreshed: new Date().toISOString(),
+          },
+        };
+      }
     }
 
     try {
-      const response = await fetchNotUpdatedMRs(mergedOptions);
-      setInCache(cacheKey, response);
-      return response;
+      const baseMRs = await this._getBaseMRs({ skipCache });
+      const thresholdDate = new Date();
+      thresholdDate.setDate(thresholdDate.getDate() - threshold);
+
+      const filteredMRs = baseMRs.filter((mr) => {
+        const updatedDate = new Date(mr.updated_at);
+        return updatedDate < thresholdDate;
+      });
+
+      setInCache(cacheKey, filteredMRs);
+
+      const { paginatedItems, totalItems, totalPages } = this._paginateItems(
+        filteredMRs,
+        page,
+        per_page
+      );
+
+      return {
+        items: paginatedItems,
+        metadata: {
+          threshold,
+          currentPage: page,
+          perPage: per_page,
+          totalItems,
+          totalPages,
+          lastRefreshed: new Date().toISOString(),
+        },
+      };
     } catch (error) {
-      logger.error("Error fetching not updated MRs", { error });
+      logger.error(
+        "Error fetching not updated MRs",
+        { error },
+        "UnifiedDataService"
+      );
       throw error;
     }
   }
 
   /**
-   * Fetch MRs that are pending review
+   * Fetch MRs that are pending review (filtered internally).
    */
   async fetchPendingReviewMRs(
-    options?: Omit<FetchTeamMRsOptions, "groupId">
+    options: {
+      page?: number;
+      per_page?: number;
+      skipCache?: boolean; // Added skipCache option
+    } = {}
   ): Promise<GitLabMRsResponse> {
-    const groupId = process.env.GITLAB_GROUP_ID || "";
-    const mergedOptions: FetchTeamMRsOptions = { groupId, ...options };
-    const cacheKey = generateCacheKey("pendingReviewMRs", mergedOptions);
+    const { page = 1, per_page = 25, skipCache = false } = options;
+    const threshold = thresholds.PENDING_REVIEW_THRESHOLD;
+    const cacheKey = generateCacheKey("filteredPendingReviewMRs", {
+      threshold,
+    });
 
-    const cached = getFromCache<GitLabMRsResponse>(cacheKey);
-    if (cached) {
-      logger.info("Using cached pending review MRs data", { cacheKey });
-      return cached;
+    if (!skipCache) {
+      const cached = getFromCache<GitLabMR[]>(cacheKey);
+      if (cached) {
+        const { paginatedItems, totalItems, totalPages } = this._paginateItems(
+          cached,
+          page,
+          per_page
+        );
+        return {
+          items: paginatedItems,
+          metadata: {
+            threshold,
+            currentPage: page,
+            perPage: per_page,
+            totalItems,
+            totalPages,
+            lastRefreshed: new Date().toISOString(),
+          },
+        };
+      }
     }
 
     try {
-      const response = await fetchPendingReviewMRs(mergedOptions);
-      setInCache(cacheKey, response);
-      return response;
+      const baseMRs = await this._getBaseMRs({ skipCache });
+      const thresholdDate = new Date();
+      thresholdDate.setDate(thresholdDate.getDate() - threshold);
+      const teamUserIds = getTeamUserIds();
+
+      const filteredMRs = baseMRs.filter((mr) => {
+        const isTeamReviewer = mr.reviewers.some((reviewer) =>
+          teamUserIds.includes(reviewer.id)
+        );
+        const updatedDate = new Date(mr.updated_at);
+        const isOldUpdate = updatedDate < thresholdDate;
+        return isTeamReviewer && isOldUpdate;
+      });
+
+      setInCache(cacheKey, filteredMRs);
+
+      const { paginatedItems, totalItems, totalPages } = this._paginateItems(
+        filteredMRs,
+        page,
+        per_page
+      );
+
+      return {
+        items: paginatedItems,
+        metadata: {
+          threshold,
+          currentPage: page,
+          perPage: per_page,
+          totalItems,
+          totalPages,
+          lastRefreshed: new Date().toISOString(),
+        },
+      };
     } catch (error) {
-      logger.error("Error fetching pending review MRs", { error });
+      logger.error(
+        "Error fetching pending review MRs",
+        { error },
+        "UnifiedDataService"
+      );
       throw error;
     }
   }
 
   /**
-   * Fetch Jira tickets
+   * Fetch Jira tickets (delegated to JiraService).
    */
-  async fetchJiraTickets(options?: JiraQueryOptions): Promise<JiraTicket[]> {
-    const cacheKey = generateCacheKey("jiraTickets", options);
-
-    const cached = getFromCache<JiraTicket[]>(cacheKey);
-    if (cached) {
-      logger.info("Using cached Jira tickets data", { cacheKey });
-      return cached;
-    }
-
+  async fetchJiraTickets(
+    options: JiraQueryOptions = {}
+  ): Promise<JiraTicket[]> {
+    // Pass skipCache option to the underlying service if needed
     try {
-      const tickets = await jiraService.getTickets(options);
-      setInCache(cacheKey, tickets);
-      return tickets;
+      return await jiraService.getTickets(options);
     } catch (error) {
-      logger.error("Error fetching Jira tickets", { error });
+      logger.error(
+        "Error fetching Jira tickets",
+        { error },
+        "UnifiedDataService"
+      );
       throw error;
     }
   }
 
   /**
-   * Get MRs with associated Jira tickets
+   * Get MRs enriched with associated Jira tickets.
    */
   async getMRsWithJiraTickets(
-    options?: Omit<FetchTeamMRsOptions, "groupId">
+    options: { skipCache?: boolean } = {} // Added skipCache option
   ): Promise<GitLabMRWithJira[]> {
-    const groupId = process.env.GITLAB_GROUP_ID || "";
-    const mergedOptions: FetchTeamMRsOptions = { groupId, ...options };
-    const cacheKey = generateCacheKey("mrsWithJira", mergedOptions);
-
-    const cached = getFromCache<GitLabMRWithJira[]>(cacheKey);
-    if (cached) {
-      logger.info("Using cached MRs with Jira data", { cacheKey });
-      return cached;
-    }
-
+    // Caching is handled within _getEnrichedMRs, pass skipCache
     try {
-      // Fetch MRs
-      const mrsResponse = await fetchTeamMRs(mergedOptions);
-
-      // Map Jira tickets to MRs
-      const mrsWithJira = await jiraService.mapMRsToTickets(mrsResponse.items);
-
-      setInCache(cacheKey, mrsWithJira);
-      return mrsWithJira;
+      return await this._getEnrichedMRs(options);
     } catch (error) {
-      logger.error("Error fetching MRs with Jira tickets", { error });
+      logger.error(
+        "Error getting MRs with Jira tickets",
+        { error },
+        "UnifiedDataService"
+      );
       throw error;
     }
   }
 
   /**
-   * Get Jira tickets with associated MRs
+   * Get Jira tickets grouped with their associated MRs.
    */
   async getJiraTicketsWithMRs(
-    options?: Omit<FetchTeamMRsOptions, "groupId">,
-    jiraOptions?: JiraQueryOptions
+    options: {
+      gitlabOptions?: Omit<FetchAllTeamMRsOptions, "groupId">;
+      jiraOptions?: JiraQueryOptions;
+      skipCache?: boolean; // Added skipCache option
+    } = {}
   ): Promise<JiraTicketWithMRs[]> {
-    const groupId = process.env.GITLAB_GROUP_ID || "";
-    const mergedOptions: FetchTeamMRsOptions = { groupId, ...options };
-    const cacheKey = generateCacheKey("jiraWithMRs", {
-      gitlabOptions: mergedOptions,
+    const { gitlabOptions = {}, jiraOptions = {}, skipCache = false } = options;
+    // Pass skipCache to generate key correctly if needed, or handle inside
+    const cacheKey = generateCacheKey("groupedJiraTicketsWithMRs", {
+      gitlabOptions,
       jiraOptions,
     });
 
-    const cached = getFromCache<JiraTicketWithMRs[]>(cacheKey);
-    if (cached) {
-      logger.info("Using cached Jira tickets with MRs data", { cacheKey });
-      return cached;
+    if (!skipCache) {
+      const cached = getFromCache<JiraTicketWithMRs[]>(cacheKey);
+      if (cached) return cached;
     }
 
     try {
-      // Fetch MRs
-      const mrsResponse = await fetchTeamMRs(mergedOptions);
+      // Pass skipCache down to ensure fresh data if requested
+      const enrichedMRs = await this._getEnrichedMRs({
+        ...gitlabOptions,
+        skipCache,
+      });
 
-      // Group MRs by Jira ticket
-      const ticketsWithMRs = await jiraService.getMRsGroupedByTicket(
-        mrsResponse.items
+      // Grouping logic remains the same
+      const groupedByJira: Record<string, GitLabMRWithJira[]> = {};
+      const ticketsMap: Record<string, JiraTicket> = {};
+
+      enrichedMRs.forEach((mr) => {
+        if (mr.jiraTicketKey && mr.jiraTicket) {
+          if (!groupedByJira[mr.jiraTicketKey]) {
+            groupedByJira[mr.jiraTicketKey] = [];
+            ticketsMap[mr.jiraTicketKey] = mr.jiraTicket;
+          }
+          groupedByJira[mr.jiraTicketKey].push(mr);
+        }
+      });
+
+      let result: JiraTicketWithMRs[] = Object.entries(groupedByJira).map(
+        ([key, mrs]) => ({
+          ticket: ticketsMap[key],
+          mrs: mrs,
+          totalMRs: mrs.length,
+          openMRs: mrs.filter((mr) => mr.state === "opened").length,
+          overdueMRs: mrs.filter((mr) => {
+            const created = new Date(mr.created_at);
+            return (
+              (Date.now() - created.getTime()) / (1000 * 60 * 60 * 24) > 28
+            );
+          }).length,
+          stalledMRs: mrs.filter((mr) => {
+            const updated = new Date(mr.updated_at);
+            return (
+              (Date.now() - updated.getTime()) / (1000 * 60 * 60 * 24) > 14
+            );
+          }).length,
+        })
       );
 
-      // Apply Jira filters if provided
-      let filteredTickets = ticketsWithMRs;
-      if (jiraOptions) {
-        filteredTickets = this.filterJiraTicketsWithMRs(
-          ticketsWithMRs,
-          jiraOptions
-        );
-      }
+      // Apply Jira-specific filters if provided
+      result = this.filterJiraTicketsWithMRs(result, jiraOptions);
 
-      setInCache(cacheKey, filteredTickets);
-      return filteredTickets;
+      setInCache(cacheKey, result);
+      return result;
     } catch (error) {
-      logger.error("Error fetching Jira tickets with MRs", { error });
+      logger.error(
+        "Error getting Jira tickets with MRs",
+        { error },
+        "UnifiedDataService"
+      );
       throw error;
     }
   }
 
   /**
-   * Filter JiraTicketWithMRs based on Jira query options
+   * Filter JiraTicketWithMRs based on Jira query options.
    */
   filterJiraTicketsWithMRs(
     tickets: JiraTicketWithMRs[],
     options: JiraQueryOptions
   ): JiraTicketWithMRs[] {
+    // Implementation remains the same
     return tickets.filter((ticketWithMRs) => {
       const ticket = ticketWithMRs.ticket;
+      if (!ticket) return false;
 
-      // Filter by status
-      if (options.statuses && options.statuses.length > 0) {
-        if (!options.statuses.includes(ticket.status)) return false;
-      }
-
-      // Filter by type
-      if (options.types && options.types.length > 0) {
-        if (!options.types.includes(ticket.type)) return false;
-      }
-
-      // Filter by priority
-      if (options.priorities && options.priorities.length > 0) {
-        if (!options.priorities.includes(ticket.priority)) return false;
-      }
-
-      // Filter by assignee
-      if (options.assignees && options.assignees.length > 0) {
-        if (!ticket.assignee || !options.assignees.includes(ticket.assignee.id))
-          return false;
-      }
-
-      // Filter by sprint
-      if (options.sprintName && ticket.sprintName !== options.sprintName) {
+      if (
+        options.statuses &&
+        options.statuses.length > 0 &&
+        !options.statuses.includes(ticket.status)
+      )
         return false;
-      }
-
-      // Filter by epic
-      if (options.epicKey && ticket.epicKey !== options.epicKey) {
+      if (
+        options.types &&
+        options.types.length > 0 &&
+        !options.types.includes(ticket.type)
+      )
         return false;
-      }
-
-      // Filter by search term
+      if (
+        options.priorities &&
+        options.priorities.length > 0 &&
+        !options.priorities.includes(ticket.priority)
+      )
+        return false;
+      if (
+        options.assignees &&
+        options.assignees.length > 0 &&
+        (!ticket.assignee || !options.assignees.includes(ticket.assignee.id))
+      )
+        return false;
+      if (options.sprintName && ticket.sprintName !== options.sprintName)
+        return false;
+      if (options.epicKey && ticket.epicKey !== options.epicKey) return false;
       if (options.search) {
         const searchLower = options.search.toLowerCase();
-        const inTitle = ticket.title.toLowerCase().includes(searchLower);
-        const inKey = ticket.key.toLowerCase().includes(searchLower);
-        if (!inTitle && !inKey) return false;
+        if (
+          !ticket.title.toLowerCase().includes(searchLower) &&
+          !ticket.key.toLowerCase().includes(searchLower)
+        )
+          return false;
       }
-
-      // Filter by labels
       if (options.labels && options.labels.length > 0) {
-        if (!ticket.labels) return false;
-        const hasAnyLabel = options.labels.some((label) =>
-          ticket.labels?.includes(label)
-        );
-        if (!hasAnyLabel) return false;
+        if (
+          !ticket.labels ||
+          !options.labels.some((label) => ticket.labels?.includes(label))
+        )
+          return false;
       }
-
       return true;
     });
   }
 
   /**
-   * Force refresh all data
+   * Force refresh all data by invalidating caches.
    */
   refreshAllData(): void {
-    invalidateCache("");
-    logger.info("All cached data invalidated");
+    invalidateCache(); // Clear processed data cache
+    // Invalidate the base GitLab fetch cache held by gitlabApiCache
+    gitlabApiCache.clear(); // Clear all raw GitLab API responses
+    // Optionally clear Jira cache if a full refresh implies that too
+    // jiraApiCache.clear();
+    logger.info("All data caches invalidated for refresh.");
   }
 
   /**
-   * Force refresh specific data type
+   * Force refresh specific data type (invalidates relevant processed cache).
+   * This might need refinement based on dependencies. If refreshing 'tooOld'
+   * requires fresh base data, we might need to invalidate more broadly.
    */
   refreshData(dataType: string): void {
+    // Invalidate specific processed data cache entry/pattern
     invalidateCache(dataType);
-    logger.info(`Cached data for ${dataType} invalidated`);
+    // Consider if base data also needs invalidation for this specific refresh
+    // For now, assume base data cache (gitlabApiCache) has its own TTL or is handled by refreshAllData
+    logger.info(`Processed cache for ${dataType} invalidated.`);
   }
 }
 

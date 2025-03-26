@@ -1,10 +1,4 @@
-/**
- * DataSyncService
- *
- * Responsible for periodically refreshing data in the background
- * and intelligently invalidating cache based on data lifetime.
- */
-
+// File: src/services/DataSyncService.ts
 import { unifiedDataService } from "./UnifiedDataService";
 import { logger } from "@/lib/logger";
 import { MRDataType } from "@/hooks/useUnifiedMRData";
@@ -52,7 +46,10 @@ class DataSyncService {
   constructor() {
     // Set up default jobs for all data types
     Object.values(MRDataType).forEach((dataType) => {
-      this.addSyncJob(dataType);
+      // Skip ALL_MRS if it's just an internal step now
+      if (dataType !== MRDataType.ALL_MRS) {
+        this.addSyncJob(dataType);
+      }
     });
   }
 
@@ -69,7 +66,7 @@ class DataSyncService {
     this.syncJobs[dataType] = {
       dataType,
       lastRun: 0, // Never run yet
-      nextRun: Date.now() + interval,
+      nextRun: Date.now() + interval, // Initial run schedule
       interval,
       priority,
       isRunning: false,
@@ -84,8 +81,6 @@ class DataSyncService {
   setActiveView(view: string | null): void {
     this.activeView = view;
     logger.debug("Set active view for data sync", { view });
-
-    // Adjust priorities based on the active view
     this.reprioritizeJobs();
   }
 
@@ -93,15 +88,14 @@ class DataSyncService {
    * Reprioritize jobs based on active view
    */
   private reprioritizeJobs(): void {
-    // Reset all jobs to their default priorities
     Object.keys(this.syncJobs).forEach((key) => {
       const job = this.syncJobs[key];
       job.priority =
         REFRESH_PRIORITIES[job.dataType] || REFRESH_PRIORITIES.DEFAULT;
     });
 
-    // Boost priority for data related to active view
     if (this.activeView) {
+      // Boost priority based on active view (adjust priorities as needed)
       switch (this.activeView) {
         case "po":
           this.boostJobPriority(MRDataType.JIRA_WITH_MRS, 10);
@@ -109,10 +103,11 @@ class DataSyncService {
           break;
         case "dev":
           this.boostJobPriority(MRDataType.MRS_WITH_JIRA, 10);
-          this.boostJobPriority(MRDataType.PENDING_REVIEW, 8);
+          this.boostJobPriority(MRDataType.PENDING_REVIEW, 8); // Still relevant for Dev
           break;
         case "team":
           this.boostJobPriority(MRDataType.JIRA_WITH_MRS, 10);
+          this.boostJobPriority(MRDataType.MRS_WITH_JIRA, 8); // Team overview needs both
           break;
         case "hygiene":
         default:
@@ -129,8 +124,11 @@ class DataSyncService {
    */
   private boostJobPriority(dataType: string, priority: number): void {
     if (this.syncJobs[dataType]) {
-      this.syncJobs[dataType].priority = priority;
-      logger.debug("Boosted job priority", { dataType, priority });
+      this.syncJobs[dataType].priority = Math.max(
+        this.syncJobs[dataType].priority,
+        priority
+      ); // Ensure we don't lower priority
+      logger.debug("Adjusted job priority", { dataType, priority });
     }
   }
 
@@ -138,25 +136,24 @@ class DataSyncService {
    * Start the synchronization service
    */
   start(checkInterval: number = 30000): void {
-    if (this.isActive) return;
+    if (this.isActive || typeof window === "undefined") return; // Don't run on server
 
     this.isActive = true;
     logger.info("Started data sync service", { checkInterval });
 
-    // Create a sync loop that runs every 30 seconds by default
     this.syncInterval = window.setInterval(() => {
       this.processSyncJobs();
     }, checkInterval);
 
-    // Run an initial sync pass
-    setTimeout(() => this.processSyncJobs(), 1000);
+    // Run an initial sync pass shortly after start
+    setTimeout(() => this.processSyncJobs(), 5000); // Delay initial run slightly
   }
 
   /**
    * Stop the synchronization service
    */
   stop(): void {
-    if (!this.isActive) return;
+    if (!this.isActive || typeof window === "undefined") return;
 
     if (this.syncInterval !== null) {
       clearInterval(this.syncInterval);
@@ -171,54 +168,60 @@ class DataSyncService {
    * Process all sync jobs, running those that are due
    */
   private processSyncJobs(): void {
+    if (!this.isActive) return;
+
     const now = Date.now();
     const jobs = Object.values(this.syncJobs)
-      // Filter out jobs that are not due or already running
       .filter((job) => !job.isRunning && job.nextRun <= now)
-      // Sort by priority (highest first)
       .sort((a, b) => b.priority - a.priority);
 
-    // Process up to 2 jobs at once to avoid overwhelming the system
-    const jobsToRun = jobs.slice(0, 2);
+    const jobsToRun = jobs.slice(0, 2); // Limit concurrent jobs
 
-    jobsToRun.forEach((job) => {
-      this.runSyncJob(job.dataType).catch((error) => {
-        logger.error("Error running sync job", {
-          dataType: job.dataType,
-          error,
+    if (jobsToRun.length > 0) {
+      logger.debug(`Processing ${jobsToRun.length} sync jobs`, {
+        jobs: jobsToRun.map((j) => j.dataType),
+      });
+      jobsToRun.forEach((job) => {
+        this.runSyncJob(job.dataType).catch((error) => {
+          logger.error("Error running sync job", {
+            dataType: job.dataType,
+            error,
+          });
         });
       });
-    });
+    }
   }
 
   /**
-   * Run a specific sync job
+   * Run a specific sync job, ensuring cache is skipped.
    */
   private async runSyncJob(dataType: string): Promise<void> {
     const job = this.syncJobs[dataType];
     if (!job || job.isRunning) return;
 
-    // Mark job as running
     job.isRunning = true;
     logger.debug("Running sync job", { dataType });
 
     try {
-      // Refresh data based on type
+      // Always skip cache for background sync jobs
+      const options = { skipCache: true };
+
       switch (dataType) {
         case MRDataType.TOO_OLD:
-          await unifiedDataService.fetchTooOldMRs({ skipCache: true });
+          await unifiedDataService.fetchTooOldMRs(options);
           break;
         case MRDataType.NOT_UPDATED:
-          await unifiedDataService.fetchNotUpdatedMRs({ skipCache: true });
+          await unifiedDataService.fetchNotUpdatedMRs(options);
           break;
         case MRDataType.PENDING_REVIEW:
-          await unifiedDataService.fetchPendingReviewMRs({ skipCache: true });
+          await unifiedDataService.fetchPendingReviewMRs(options);
           break;
         case MRDataType.MRS_WITH_JIRA:
-          await unifiedDataService.getMRsWithJiraTickets({ skipCache: true });
+          await unifiedDataService.getMRsWithJiraTickets(options);
           break;
         case MRDataType.JIRA_TICKETS:
-          await unifiedDataService.fetchJiraTickets();
+          // Jira service might handle its own cache via /api/jira, ensure skipCache works there if needed
+          await unifiedDataService.fetchJiraTickets({ skipCache: true });
           break;
         case MRDataType.JIRA_WITH_MRS:
           await unifiedDataService.getJiraTicketsWithMRs({ skipCache: true });
@@ -227,31 +230,33 @@ class DataSyncService {
           logger.warn("Unknown data type for sync job", { dataType });
       }
 
-      // Update job status
       const now = Date.now();
       job.lastRun = now;
       job.nextRun = now + job.interval;
       logger.debug("Completed sync job", {
         dataType,
-        nextRun: new Date(job.nextRun),
+        nextRun: new Date(job.nextRun).toISOString(),
       });
     } catch (error) {
       logger.error("Sync job failed", { dataType, error });
-
-      // Even if the job fails, update its next run time to avoid
-      // constant retries of a failing job
       const now = Date.now();
-      job.nextRun = now + Math.max(60000, job.interval / 3); // At least 1 minute delay
+      // Schedule retry with a delay, e.g., 1/3 of interval but at least 1 min
+      job.nextRun = now + Math.max(60000, job.interval / 3);
     } finally {
-      // Mark job as no longer running
       job.isRunning = false;
     }
   }
 
   /**
-   * Force immediate refresh of a specific data type
+   * Force immediate refresh of a specific data type, skipping cache.
    */
   refreshNow(dataType: string): Promise<void> {
+    logger.info(
+      `Forcing immediate refresh for ${dataType}`,
+      {},
+      "DataSyncService"
+    );
+    // Directly call runSyncJob which handles skipCache: true
     return this.runSyncJob(dataType);
   }
 
@@ -261,6 +266,7 @@ class DataSyncService {
   setRefreshInterval(dataType: string, interval: number): void {
     if (this.syncJobs[dataType]) {
       this.syncJobs[dataType].interval = interval;
+      // Optionally adjust nextRun based on new interval?
       logger.debug("Updated sync interval", { dataType, interval });
     }
   }
@@ -268,3 +274,8 @@ class DataSyncService {
 
 // Export a singleton instance
 export const dataSyncService = new DataSyncService();
+
+// Start the service on the client-side
+if (typeof window !== "undefined") {
+  dataSyncService.start();
+}

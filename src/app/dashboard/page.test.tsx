@@ -1,123 +1,117 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+// File: src/app/dashboard/page.test.tsx
+import { render, screen, waitFor } from "@testing-library/react";
 import DashboardPage from "./page";
-import { toast } from "sonner";
+import { LayoutProvider } from "@/contexts/LayoutContext"; // Wrap with provider
+import { FeatureFlags } from "@/services/FeatureFlags"; // Mock feature flags
 
-// Mock fetch
-const mockFetch = jest.fn();
-global.fetch = mockFetch;
-
-// Mock response data
-const mockResponse = {
-  items: [
-    {
-      id: 1,
-      title: "Test MR",
-      author: { id: 1, username: "user1", name: "User 1" },
-      assignees: [{ id: 2, username: "assignee1", name: "Assignee 1" }],
-      reviewers: [{ id: 3, username: "reviewer1", name: "Reviewer 1" }],
-      created_at: "2024-03-01T12:00:00Z",
-      updated_at: "2024-03-10T12:00:00Z",
-      web_url: "https://gitlab.com/mr/1",
-    },
-  ],
-  metadata: {
-    threshold: 28,
-    lastRefreshed: new Date().toISOString(),
-    currentPage: 1,
-    totalPages: 1,
-    perPage: 25,
+// Mock FeatureFlags
+jest.mock("@/services/FeatureFlags", () => ({
+  FeatureFlags: {
+    isEnabled: jest.fn((flag) => {
+      // Enable role-based views for testing previews
+      if (
+        flag === "roleBased" ||
+        flag === "poView" ||
+        flag === "devView" ||
+        flag === "teamView"
+      ) {
+        return true;
+      }
+      return false;
+    }),
   },
-};
+}));
 
-describe("DashboardPage", () => {
+// Mock next/navigation
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: jest.fn(),
+    replace: jest.fn(),
+  }),
+  usePathname: () => "/dashboard", // Mock pathname
+}));
+
+describe("DashboardPage (Landing)", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
-    mockFetch.mockImplementation(() =>
-      Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve(mockResponse),
-      })
+    // Reset mocks if needed
+    (FeatureFlags.isEnabled as jest.Mock).mockClear();
+  });
+
+  it("renders the main title and description", async () => {
+    render(
+      <LayoutProvider>
+        <DashboardPage />
+      </LayoutProvider>
     );
-  });
 
-  it("renders all three tables", async () => {
-    render(<DashboardPage />);
-
-    expect(screen.getByText("Loading Dashboard")).toBeInTheDocument();
-
+    // Wait for client-side rendering to complete
     await waitFor(() => {
-      expect(screen.getByText("Old Merge Requests")).toBeInTheDocument();
-      expect(screen.getByText("Inactive Merge Requests")).toBeInTheDocument();
-      expect(screen.getByText("Pending Review")).toBeInTheDocument();
+      expect(screen.getByText("GitLab MR Dashboard")).toBeInTheDocument();
     });
+    expect(
+      screen.getByText(
+        /Monitor and analyze GitLab merge requests for team hygiene/i
+      )
+    ).toBeInTheDocument();
   });
 
-  it("shows loading state on initial load", () => {
-    render(<DashboardPage />);
-
-    expect(screen.getByText("Loading Dashboard")).toBeInTheDocument();
-    expect(screen.getByRole("progressbar")).toBeInTheDocument();
-  });
-
-  it("handles refresh all functionality", async () => {
-    render(<DashboardPage />);
-
+  it("renders links/cards for the hygiene categories", async () => {
+    render(
+      <LayoutProvider>
+        <DashboardPage />
+      </LayoutProvider>
+    );
     await waitFor(() => {
       expect(screen.getByText("Old Merge Requests")).toBeInTheDocument();
     });
-
-    const refreshButton = screen.getByRole("button", { name: /refresh all/i });
-    fireEvent.click(refreshButton);
-
-    expect(mockFetch).toHaveBeenCalledTimes(6); // 3 initial + 3 refresh
-    expect(toast.info).toHaveBeenCalledWith(
-      "Refreshing data",
-      expect.any(Object)
+    expect(screen.getByRole("link", { name: /View Old MRs/i })).toHaveAttribute(
+      "href",
+      "/dashboard/too-old"
     );
+    expect(
+      screen.getByRole("link", { name: /View Inactive MRs/i })
+    ).toHaveAttribute("href", "/dashboard/not-updated");
+    expect(
+      screen.getByRole("link", { name: /View Pending Reviews/i })
+    ).toHaveAttribute("href", "/dashboard/pending-review");
   });
 
-  it("handles API errors gracefully", async () => {
-    mockFetch.mockImplementationOnce(() =>
-      Promise.resolve({
-        ok: false,
-        status: 500,
-      })
+  it("renders preview cards for role-based views when enabled", async () => {
+    // FeatureFlags mock already enables these
+    render(
+      <LayoutProvider>
+        <DashboardPage />
+      </LayoutProvider>
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Role-Based Views")).toBeInTheDocument();
+    });
+    expect(screen.getByText("PO View")).toBeInTheDocument();
+    expect(screen.getByText("Dev View")).toBeInTheDocument();
+    expect(screen.getByText("Team View")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Open PO View/i })
+    ).toBeInTheDocument();
+    // Add checks for Dev and Team view buttons/links as well
+  });
+
+  it("does NOT render preview cards for role-based views when disabled", async () => {
+    // Disable role-based views for this test
+    (FeatureFlags.isEnabled as jest.Mock).mockImplementation(
+      (flag) => flag !== "roleBased" // Disable the main flag
     );
 
-    render(<DashboardPage />);
-
+    render(
+      <LayoutProvider>
+        <DashboardPage />
+      </LayoutProvider>
+    );
     await waitFor(() => {
-      expect(screen.getByText(/failed to fetch/i)).toBeInTheDocument();
+      expect(screen.getByText("GitLab MR Dashboard")).toBeInTheDocument(); // Ensure page loaded
     });
-  });
 
-  it("shows keyboard shortcut hint", async () => {
-    render(<DashboardPage />);
-
-    await waitFor(() => {
-      expect(screen.getByText(/press ctrl\+r to refresh/i)).toBeInTheDocument();
-    });
-  });
-
-  it("disables refresh button while loading", async () => {
-    render(<DashboardPage />);
-
-    const refreshButton = screen.getByRole("button", { name: /refresh all/i });
-    expect(refreshButton).toBeDisabled();
-
-    await waitFor(() => {
-      expect(refreshButton).not.toBeDisabled();
-    });
-  });
-
-  it("shows spinner in refresh button while loading", async () => {
-    render(<DashboardPage />);
-
-    const refreshIcon = screen.getByTestId("refresh-icon");
-    expect(refreshIcon).toHaveClass("animate-spin");
-
-    await waitFor(() => {
-      expect(refreshIcon).not.toHaveClass("animate-spin");
-    });
+    expect(screen.queryByText("Role-Based Views")).not.toBeInTheDocument();
+    expect(screen.queryByText("PO View")).not.toBeInTheDocument();
+    // Add checks for Dev and Team views as well
   });
 });

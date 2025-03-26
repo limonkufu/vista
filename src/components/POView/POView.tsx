@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+// File: src/components/POView/POView.tsx
+import { useState, useEffect, useMemo } from "react";
 import { JiraTicketWithMRs } from "@/types/Jira";
 import { TicketGroup } from "./TicketGroup";
 import { Button } from "@/components/ui/button";
@@ -19,18 +20,14 @@ import {
 import { RefreshCw, Search, Filter } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { logger } from "@/lib/logger";
-
-// This would be replaced with actual service in Phase 3
-import { JiraServiceFactory } from "@/services/JiraServiceFactory";
+import { usePOViewData } from "@/hooks/useUnifiedMRData"; // Import the specialized hook
 
 interface POViewProps {
   className?: string;
 }
 
 export function POView({ className }: POViewProps) {
-  const [isLoading, setIsLoading] = useState(true);
-  const [tickets, setTickets] = useState<JiraTicketWithMRs[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  // Local state for filters
   const [searchTerm, setSearchTerm] = useState("");
   const [filters, setFilters] = useState<JiraQueryOptions>({
     statuses: [],
@@ -38,78 +35,57 @@ export function POView({ className }: POViewProps) {
     types: [],
   });
 
-  // Load tickets
-  useEffect(() => {
-    const loadTickets = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        logger.info("Loading PO view tickets", { filters }, "POView");
+  // Use the specialized hook to fetch data
+  const {
+    data: ticketsData, // Renamed to avoid conflict
+    isLoading,
+    isError,
+    error: fetchError,
+    refetch,
+  } = usePOViewData(
+    { search: searchTerm, ...filters }, // Pass filters to the hook
+    undefined // No specific GitLab options needed here usually
+    // Add refreshInterval if needed: 60000 // e.g., refresh every minute
+  );
 
-        // Get the Jira service from the factory
-        const jiraService = JiraServiceFactory.getService();
+  // Memoize tickets to prevent re-renders if data object identity changes but content is same
+  const tickets = useMemo(() => ticketsData || [], [ticketsData]);
+  const error = isError ? fetchError?.message || "Unknown error" : null;
 
-        // Get Jira tickets with MRs
-        const ticketsData = await jiraService.getTicketsWithMRs({
-          search: searchTerm,
-          ...filters,
-        });
-
-        setTickets(ticketsData);
-        logger.info(
-          "Successfully loaded PO view tickets",
-          {
-            count: ticketsData.length,
-            filters,
-          },
-          "POView"
-        );
-        setIsLoading(false);
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : "Unknown error";
-        logger.error(
-          "Error loading PO view tickets",
-          {
-            error: errorMessage,
-            filters,
-          },
-          "POView"
-        );
-        setError("Failed to load tickets. Please try again.");
-        setIsLoading(false);
-      }
-    };
-
-    loadTickets();
-  }, [searchTerm, filters]);
-
+  // Handle refresh - call the refetch function from the hook
   const handleRefresh = () => {
     logger.info("Refreshing PO view data", {}, "POView");
-    setIsLoading(true);
-    setError(null);
+    refetch(); // This triggers the data fetching logic within usePOViewData
   };
 
+  // Handle filter changes - update local state, hook will refetch due to dependency change
   const handleFilterChange = (
     filterType: keyof JiraQueryOptions,
-    value: string[]
+    value: string[] | string // Allow single string for select
   ) => {
+    const newValue = Array.isArray(value)
+      ? value
+      : value === "all"
+      ? []
+      : [value]; // Convert single value from Select to array or empty array
+
     logger.info(
       "Updating PO view filters",
-      {
-        filterType,
-        value,
-      },
+      { filterType, value: newValue },
       "POView"
     );
     setFilters((prev) => ({
       ...prev,
-      [filterType]: value,
+      [filterType]: newValue,
     }));
+    // No need to manually call loadTickets, the hook handles it
   };
 
-  // Filter and sort tickets based on current filters and search term
-  const filteredTickets = tickets;
+  // No need for useEffect to load data, the hook handles it.
+
+  // Filtering is now primarily done by the hook/service based on options passed.
+  // Client-side filtering can be added here if needed on top of service results.
+  const filteredTickets = tickets; // Assuming hook returns pre-filtered data based on options
 
   return (
     <div className={`space-y-6 ${className || ""}`}>
@@ -123,6 +99,7 @@ export function POView({ className }: POViewProps) {
         </Button>
       </div>
 
+      {/* Filter UI remains similar, but triggers state updates */}
       <div className="flex gap-4 items-center">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -137,12 +114,8 @@ export function POView({ className }: POViewProps) {
 
         <div className="flex gap-2">
           <Select
-            onValueChange={(value) =>
-              handleFilterChange(
-                "statuses",
-                value === "all" ? [] : [value as JiraTicketStatus]
-              )
-            }
+            value={filters.statuses?.[0] || "all"} // Assuming single select for simplicity
+            onValueChange={(value) => handleFilterChange("statuses", value)}
           >
             <SelectTrigger className="w-[160px]">
               <SelectValue placeholder="Status" />
@@ -158,12 +131,8 @@ export function POView({ className }: POViewProps) {
           </Select>
 
           <Select
-            onValueChange={(value) =>
-              handleFilterChange(
-                "priorities",
-                value === "all" ? [] : [value as JiraTicketPriority]
-              )
-            }
+            value={filters.priorities?.[0] || "all"}
+            onValueChange={(value) => handleFilterChange("priorities", value)}
           >
             <SelectTrigger className="w-[160px]">
               <SelectValue placeholder="Priority" />
@@ -179,12 +148,8 @@ export function POView({ className }: POViewProps) {
           </Select>
 
           <Select
-            onValueChange={(value) =>
-              handleFilterChange(
-                "types",
-                value === "all" ? [] : [value as JiraTicketType]
-              )
-            }
+            value={filters.types?.[0] || "all"}
+            onValueChange={(value) => handleFilterChange("types", value)}
           >
             <SelectTrigger className="w-[160px]">
               <SelectValue placeholder="Type" />
@@ -226,7 +191,7 @@ export function POView({ className }: POViewProps) {
             <TicketGroup
               key={ticketWithMRs.ticket.id}
               ticketWithMRs={ticketWithMRs}
-              isExpanded={false}
+              isExpanded={false} // Manage expansion state locally if needed
             />
           ))
         ) : (
@@ -236,11 +201,7 @@ export function POView({ className }: POViewProps) {
               variant="link"
               onClick={() => {
                 setSearchTerm("");
-                setFilters({
-                  statuses: [],
-                  priorities: [],
-                  types: [],
-                });
+                setFilters({ statuses: [], priorities: [], types: [] });
               }}
             >
               Clear filters

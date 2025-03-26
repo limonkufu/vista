@@ -1,58 +1,65 @@
+// File: src/lib/cacheManager.ts
 import { gitlabApiCache } from "./gitlabCache";
 import { jiraApiCache } from "./jiraCache";
-import { tooOldCache, notUpdatedCache, pendingReviewCache } from "./cache";
+// Removed: import { tooOldCache, notUpdatedCache, pendingReviewCache } from "./cache";
 import { clientCache } from "./clientCache";
 import { logger } from "./logger";
+import { unifiedDataService } from "@/services/UnifiedDataService"; // Import for invalidation
 
 /**
  * Cache management utilities
  */
 export const cacheManager = {
   /**
-   * Clear all caches (API response cache, GitLab API cache, Jira API cache, and client cache)
+   * Clear all relevant caches (GitLab API, Jira API, Unified Data Service, Client Cache)
    */
   clearAll: () => {
-    // Clear API response caches
-    tooOldCache.clear();
-    notUpdatedCache.clear();
-    pendingReviewCache.clear();
+    // Clear Unified Data Service processed cache
+    unifiedDataService.refreshAllData(); // This now handles invalidating its own cache and potentially base caches
 
-    // Clear GitLab API cache
-    gitlabApiCache.clear();
-
-    // Clear Jira API cache
+    // Clear raw Jira API cache
     jiraApiCache.clear();
 
     // Clear client cache
     clientCache.clear();
 
-    logger.info("All caches cleared", {}, "CacheManager");
+    logger.info("All relevant caches cleared", {}, "CacheManager");
   },
 
   /**
-   * Clear only the GitLab API cache
+   * Clear only the GitLab API cache (raw responses)
    */
   clearGitLabCache: () => {
     gitlabApiCache.clear();
-    logger.info("GitLab API cache cleared", {}, "CacheManager");
+    // Also clear UnifiedDataService cache as it depends on GitLab data
+    unifiedDataService.refreshAllData();
+    logger.info(
+      "GitLab API cache cleared (and dependent processed data)",
+      {},
+      "CacheManager"
+    );
   },
 
   /**
-   * Clear only the Jira API cache
+   * Clear only the Jira API cache (raw responses)
    */
   clearJiraCache: () => {
     jiraApiCache.clear();
-    logger.info("Jira API cache cleared", {}, "CacheManager");
+    // Also clear UnifiedDataService cache as it depends on Jira data
+    unifiedDataService.refreshAllData();
+    logger.info(
+      "Jira API cache cleared (and dependent processed data)",
+      {},
+      "CacheManager"
+    );
   },
 
   /**
-   * Clear only the API response caches
+   * Clear only the Unified Data Service's processed data cache
    */
-  clearApiResponseCaches: () => {
-    tooOldCache.clear();
-    notUpdatedCache.clear();
-    pendingReviewCache.clear();
-    logger.info("API response caches cleared", {}, "CacheManager");
+  clearProcessedDataCache: () => {
+    unifiedDataService.refreshAllData(); // Use the service's method
+    logger.info("Processed data cache cleared", {}, "CacheManager");
   },
 
   /**
@@ -68,13 +75,12 @@ export const cacheManager = {
    * @returns Object with cache statistics
    */
   getStats: () => {
+    // Note: UnifiedDataService internal cache size is not exposed directly
     return {
-      tooOldCache: { size: "N/A" }, // We don't have a direct way to access the size
-      notUpdatedCache: { size: "N/A" },
-      pendingReviewCache: { size: "N/A" },
+      unifiedDataServiceCache: { size: "N/A (Internal)" },
       gitlabApiCache: gitlabApiCache.getStats(),
       jiraApiCache: jiraApiCache.getStats(),
-      clientCache: { size: "N/A" },
+      clientCache: { size: clientCache.getSize() }, // Add getSize method to clientCache if needed
     };
   },
 };

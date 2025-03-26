@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+// File: src/components/DevView/DevView.tsx
+import { useState, useEffect, useMemo } from "react";
 import { GitLabMRWithJira } from "@/types/Jira";
 import { MRStatusCategory, StatusGroup } from "./StatusGroup";
 import { Button } from "@/components/ui/button";
@@ -13,11 +14,10 @@ import {
 import { RefreshCw, Search, Filter } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { logger } from "@/lib/logger";
-
-// This would be linked with actual service in Phase 3
-import { JiraServiceFactory } from "@/services/JiraServiceFactory";
+import { useDevViewData } from "@/hooks/useUnifiedMRData"; // Import the specialized hook
 
 // Mock categorization of MRs - in reality this would use more complex logic
+// Keep this function or refine it based on actual MR data properties
 function categorizeMRs(
   mrs: GitLabMRWithJira[]
 ): Record<MRStatusCategory, GitLabMRWithJira[]> {
@@ -30,18 +30,22 @@ function categorizeMRs(
   };
 
   mrs.forEach((mr) => {
-    // Mock categorization logic
-    if (mr.merge_status === "cannot_be_merged") {
+    // Mock categorization logic - refine this based on actual data/needs
+    if (mr.merge_status === "cannot_be_merged" || mr.has_conflicts) {
       categorized[MRStatusCategory.BLOCKED].push(mr);
     } else if (mr.state === "merged") {
-      // Already merged, don't include
-    } else if (mr.merge_status === "unchecked") {
+      // Already merged, don't include in active categories
+    } else if (mr.merge_status === "unchecked" || mr.draft) {
+      // Assuming 'unchecked' means CI is running or pending, or if it's a draft
       categorized[MRStatusCategory.WAITING_FOR_CI].push(mr);
-    } else if (mr.user_notes_count > 0) {
+    } else if (mr.user_notes_count > 0 && mr.upvotes === 0) {
+      // Heuristic: has comments but no approvals might mean changes requested
       categorized[MRStatusCategory.CHANGES_REQUESTED].push(mr);
-    } else if (mr.upvotes > 0) {
+    } else if (mr.upvotes > 0 && mr.merge_status === "can_be_merged") {
+      // Has approvals and can be merged
       categorized[MRStatusCategory.READY_TO_MERGE].push(mr);
     } else {
+      // Default to needs review if open and not fitting other categories
       categorized[MRStatusCategory.NEEDS_REVIEW].push(mr);
     }
   });
@@ -49,166 +53,85 @@ function categorizeMRs(
   return categorized;
 }
 
-// Use Record<string, never> instead of empty interface
 type DevViewProps = Record<string, never>;
 
 export function DevView({}: DevViewProps) {
-  const [isLoading, setIsLoading] = useState(true);
-  const [mergeRequests, setMergeRequests] = useState<GitLabMRWithJira[]>([]);
-  const [categorizedMRs, setCategorizedMRs] = useState<
-    Record<MRStatusCategory, GitLabMRWithJira[]>
-  >({
-    [MRStatusCategory.NEEDS_REVIEW]: [],
-    [MRStatusCategory.CHANGES_REQUESTED]: [],
-    [MRStatusCategory.WAITING_FOR_CI]: [],
-    [MRStatusCategory.READY_TO_MERGE]: [],
-    [MRStatusCategory.BLOCKED]: [],
-  });
-  const [error, setError] = useState<string | null>(null);
+  // Local state for filters
   const [searchTerm, setSearchTerm] = useState("");
   const [authorFilter, setAuthorFilter] = useState<string>("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
 
-  // Load MRs
-  useEffect(() => {
-    const loadMRs = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        logger.info(
-          "Loading Dev view MRs",
-          {
-            searchTerm,
-            authorFilter,
-            projectFilter,
-          },
-          "DevView"
-        );
+  // Use the specialized hook to fetch data
+  const {
+    data: mergeRequestsData, // Renamed to avoid conflict
+    isLoading,
+    isError,
+    error: fetchError,
+    refetch,
+  } = useDevViewData(
+    {
+      // Pass filter options if the hook/service supports them
+      // Example: authorId: authorFilter !== 'all' ? parseInt(authorFilter) : undefined,
+      // Example: projectId: projectFilter !== 'all' ? parseInt(projectFilter) : undefined,
+    }
+    // Add refreshInterval if needed
+  );
 
-        // Get the Jira service from the factory, which also provides MRs
-        const jiraService = JiraServiceFactory.getService();
+  // Apply client-side filtering on top of the data fetched by the hook
+  const filteredMergeRequests = useMemo(() => {
+    let mrs = mergeRequestsData || [];
 
-        // Get MRs with Jira info
-        const mrs = await jiraService.getMergeRequestsWithJira();
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      mrs = mrs.filter(
+        (mr) =>
+          mr.title.toLowerCase().includes(searchLower) ||
+          mr.jiraTicketKey?.toLowerCase().includes(searchLower) ||
+          mr.source_branch.toLowerCase().includes(searchLower)
+      );
+    }
+    if (authorFilter !== "all") {
+      // Assuming authorFilter stores the username string
+      mrs = mrs.filter((mr) => mr.author.username === authorFilter);
+    }
+    if (projectFilter !== "all") {
+      // Assuming projectFilter stores the project ID as a string
+      mrs = mrs.filter((mr) => mr.project_id.toString() === projectFilter);
+    }
+    return mrs;
+  }, [mergeRequestsData, searchTerm, authorFilter, projectFilter]);
 
-        // Apply client-side filtering
-        let filteredMRs = mrs;
-        if (searchTerm) {
-          const searchLower = searchTerm.toLowerCase();
-          filteredMRs = filteredMRs.filter(
-            (mr) =>
-              mr.title.toLowerCase().includes(searchLower) ||
-              mr.jiraTicketKey?.toLowerCase().includes(searchLower) ||
-              mr.source_branch.toLowerCase().includes(searchLower)
-          );
-        }
+  // Categorize the *client-side filtered* MRs
+  const categorizedMRs = useMemo(
+    () => categorizeMRs(filteredMergeRequests),
+    [filteredMergeRequests]
+  );
 
-        if (authorFilter && authorFilter !== "all") {
-          filteredMRs = filteredMRs.filter(
-            (mr) => mr.author.username === authorFilter
-          );
-        }
+  const error = isError ? fetchError?.message || "Unknown error" : null;
 
-        if (projectFilter && projectFilter !== "all") {
-          filteredMRs = filteredMRs.filter(
-            (mr) => mr.project_id.toString() === projectFilter
-          );
-        }
-
-        setMergeRequests(filteredMRs);
-
-        // Categorize MRs
-        const categorized = categorizeMRs(filteredMRs);
-        setCategorizedMRs(categorized);
-
-        logger.info(
-          "Successfully loaded Dev view MRs",
-          {
-            total: filteredMRs.length,
-            categorized: Object.fromEntries(
-              Object.entries(categorized).map(([key, value]) => [
-                key,
-                value.length,
-              ])
-            ),
-          },
-          "DevView"
-        );
-        setIsLoading(false);
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : "Unknown error";
-        logger.error(
-          "Error loading Dev view MRs",
-          {
-            error: errorMessage,
-            searchTerm,
-            authorFilter,
-            projectFilter,
-          },
-          "DevView"
-        );
-        setError("Failed to load merge requests. Please try again.");
-        setIsLoading(false);
-      }
-    };
-
-    loadMRs();
-  }, [searchTerm, authorFilter, projectFilter]);
-
-  // Handle refresh
+  // Handle refresh - call the refetch function from the hook
   const handleRefresh = () => {
     logger.info("Refreshing Dev view data", {}, "DevView");
-    setIsLoading(true);
-    setError(null);
-    // This is a bit of a hack for demo purposes - in reality we'd invalidate cache and re-fetch
-    setTimeout(() => {
-      const jiraService = JiraServiceFactory.getService();
-      jiraService
-        .getMergeRequestsWithJira({ skipCache: true })
-        .then((mrs) => {
-          const filtered = mrs.filter((mr) => {
-            let match = true;
-
-            if (searchTerm) {
-              const searchLower = searchTerm.toLowerCase();
-              match =
-                match &&
-                (mr.title.toLowerCase().includes(searchLower) ||
-                  mr.jiraTicketKey?.toLowerCase().includes(searchLower) ||
-                  mr.source_branch.toLowerCase().includes(searchLower));
-            }
-
-            if (authorFilter && authorFilter !== "all") {
-              match = match && mr.author.username === authorFilter;
-            }
-
-            if (projectFilter && projectFilter !== "all") {
-              match = match && mr.project_id.toString() === projectFilter;
-            }
-
-            return match;
-          });
-
-          setMergeRequests(filtered);
-          setCategorizedMRs(categorizeMRs(filtered));
-          setIsLoading(false);
-        })
-        .catch((err) => {
-          console.error("Error refreshing:", err);
-          setError("Failed to refresh data. Please try again.");
-          setIsLoading(false);
-        });
-    }, 500);
+    refetch(); // Triggers data fetching in useDevViewData
   };
 
-  // Get unique authors for filter
-  const authors = [...new Set(mergeRequests.map((mr) => mr.author.username))];
+  // Extract unique authors and projects from the *original* data for dropdowns
+  const authors = useMemo(
+    () => [
+      ...new Set((mergeRequestsData || []).map((mr) => mr.author.username)),
+    ],
+    [mergeRequestsData]
+  );
+  const projects = useMemo(
+    () => [
+      ...new Set(
+        (mergeRequestsData || []).map((mr) => mr.project_id.toString())
+      ),
+    ],
+    [mergeRequestsData]
+  );
 
-  // Get unique projects for filter
-  const projects = [
-    ...new Set(mergeRequests.map((mr) => mr.project_id.toString())),
-  ];
+  // No need for useEffect to load data, the hook handles it.
 
   return (
     <div className="space-y-6">
@@ -222,6 +145,7 @@ export function DevView({}: DevViewProps) {
         </Button>
       </div>
 
+      {/* Filter UI remains similar */}
       <div className="flex gap-4 items-center">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -241,8 +165,8 @@ export function DevView({}: DevViewProps) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Authors</SelectItem>
-              {authors.map((author, index) => (
-                <SelectItem key={`author-${author}-${index}`} value={author}>
+              {authors.map((author) => (
+                <SelectItem key={`author-${author}`} value={author}>
                   {author}
                 </SelectItem>
               ))}
@@ -255,8 +179,8 @@ export function DevView({}: DevViewProps) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Projects</SelectItem>
-              {projects.map((project, index) => (
-                <SelectItem key={`project-${project}-${index}`} value={project}>
+              {projects.map((project) => (
+                <SelectItem key={`project-${project}`} value={project}>
                   Project #{project}
                 </SelectItem>
               ))}
@@ -276,45 +200,44 @@ export function DevView({}: DevViewProps) {
       )}
 
       <div className="space-y-4">
-        {isLoading
-          ? // Skeleton loading state
-            Array.from({ length: 3 }).map((_, index) => (
-              <div key={index} className="space-y-2">
-                <Skeleton className="h-12 w-full rounded-md" />
-                <Skeleton className="h-4 w-3/4 rounded-md" />
-                <Skeleton className="h-4 w-1/2 rounded-md" />
-              </div>
-            ))
-          : Object.entries(categorizedMRs).map(([status, mrs]) => (
-              <StatusGroup
-                key={status}
-                status={status as MRStatusCategory}
-                mergeRequests={mrs}
-                isExpanded={
-                  status === MRStatusCategory.CHANGES_REQUESTED ||
-                  status === MRStatusCategory.NEEDS_REVIEW
-                }
-              />
-            ))}
-
-        {!isLoading &&
-          Object.values(categorizedMRs).every(
-            (group) => group.length === 0
-          ) && (
-            <div className="text-center py-8 text-muted-foreground">
-              <p>No merge requests found matching your criteria.</p>
-              <Button
-                variant="link"
-                onClick={() => {
-                  setSearchTerm("");
-                  setAuthorFilter("all");
-                  setProjectFilter("all");
-                }}
-              >
-                Clear filters
-              </Button>
+        {isLoading ? (
+          // Skeleton loading state
+          Array.from({ length: 3 }).map((_, index) => (
+            <div key={index} className="space-y-2">
+              <Skeleton className="h-12 w-full rounded-md" />
+              <Skeleton className="h-4 w-3/4 rounded-md" />
+              <Skeleton className="h-4 w-1/2 rounded-md" />
             </div>
-          )}
+          ))
+        ) : // Use categorizedMRs derived from filteredMergeRequests
+        Object.entries(categorizedMRs).length > 0 &&
+          Object.values(categorizedMRs).some((group) => group.length > 0) ? (
+          Object.entries(categorizedMRs).map(([status, mrs]) => (
+            <StatusGroup
+              key={status}
+              status={status as MRStatusCategory}
+              mergeRequests={mrs}
+              isExpanded={
+                status === MRStatusCategory.CHANGES_REQUESTED ||
+                status === MRStatusCategory.NEEDS_REVIEW
+              } // Example expansion logic
+            />
+          ))
+        ) : (
+          <div className="text-center py-8 text-muted-foreground">
+            <p>No merge requests found matching your criteria.</p>
+            <Button
+              variant="link"
+              onClick={() => {
+                setSearchTerm("");
+                setAuthorFilter("all");
+                setProjectFilter("all");
+              }}
+            >
+              Clear filters
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

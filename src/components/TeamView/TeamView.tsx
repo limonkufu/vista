@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+// File: src/components/TeamView/TeamView.tsx
+import { useState, useEffect, useMemo } from "react";
 import {
   JiraTicketWithMRs,
   GitLabMRWithJira,
@@ -19,122 +20,73 @@ import {
 import { RefreshCw, Search, Filter } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { logger } from "@/lib/logger";
-import { JiraServiceFactory } from "@/services/JiraServiceFactory";
+import { useTeamViewData, useDevViewData } from "@/hooks/useUnifiedMRData"; // Import specialized hooks
 
-// Use Record<string, never> instead of empty interface
 type TeamViewProps = Record<string, never>;
-
-// Tab types for the team view
 type TeamViewTab = "overview" | "tickets";
 
 export function TeamView({}: TeamViewProps) {
-  const [isLoading, setIsLoading] = useState(true);
-  const [tickets, setTickets] = useState<JiraTicketWithMRs[]>([]);
-  const [mergeRequests, setMergeRequests] = useState<GitLabMRWithJira[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  // Local state for filters and tabs
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState<TeamViewTab>("overview");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  // Mock loading the tickets and MRs
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        logger.info(
-          "Loading Team view data",
-          {
-            searchTerm,
-            statusFilter,
-            activeTab,
-          },
-          "TeamView"
-        );
+  // --- Data Fetching using Hooks ---
+  const jiraOptions: JiraQueryOptions = useMemo(
+    () => ({
+      search: searchTerm,
+      statuses:
+        statusFilter !== "all" ? [statusFilter as JiraTicketStatus] : undefined,
+    }),
+    [searchTerm, statusFilter]
+  );
 
-        // Get the Jira service from the factory
-        const jiraService = JiraServiceFactory.getService();
+  // Fetch tickets with MRs (for metrics and ticket table)
+  const {
+    data: ticketsData,
+    isLoading: isLoadingTickets,
+    isError: isErrorTickets,
+    error: errorTickets,
+    refetch: refetchTickets,
+  } = useTeamViewData(jiraOptions);
 
-        const queryOptions: JiraQueryOptions = {
-          search: searchTerm,
-          statuses:
-            statusFilter && statusFilter !== "all"
-              ? [statusFilter as JiraTicketStatus]
-              : undefined,
-          skipCache: false,
-        };
+  // Fetch all MRs with Jira (needed for some overview metrics like total MRs)
+  // Note: This might be slightly redundant if useTeamViewData already fetches all MRs internally.
+  // If useTeamViewData provides *all* MRs used to build the ticket groups, this second fetch might be unnecessary.
+  // Assuming for now we need both datasets separately structured.
+  const {
+    data: mergeRequestsData,
+    isLoading: isLoadingMRs,
+    isError: isErrorMRs,
+    error: errorMRs,
+    refetch: refetchMRs,
+  } = useDevViewData(); // useDevViewData fetches GitLabMRWithJira
 
-        // Get Jira tickets with MRs
-        const ticketsData = await jiraService.getTicketsWithMRs(queryOptions);
+  // Combine loading and error states
+  const isLoading = isLoadingTickets || isLoadingMRs;
+  const isError = isErrorTickets || isErrorMRs;
+  const error = isError
+    ? errorTickets?.message || errorMRs?.message || "Failed to load team data"
+    : null;
 
-        // Get all MRs with Jira info
-        const mrsData = await jiraService.getMergeRequestsWithJira();
+  // Memoize data
+  const tickets = useMemo(() => ticketsData || [], [ticketsData]);
+  const mergeRequests = useMemo(
+    () => mergeRequestsData || [],
+    [mergeRequestsData]
+  );
 
-        setTickets(ticketsData);
-        setMergeRequests(mrsData);
-        logger.info(
-          "Successfully loaded Team view data",
-          {
-            ticketsCount: ticketsData.length,
-            mrsCount: mrsData.length,
-            statusFilter,
-          },
-          "TeamView"
-        );
-        setIsLoading(false);
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : "Unknown error";
-        logger.error(
-          "Error loading Team view data",
-          {
-            error: errorMessage,
-            searchTerm,
-            statusFilter,
-            activeTab,
-          },
-          "TeamView"
-        );
-        setError("Failed to load team data. Please try again.");
-        setIsLoading(false);
-      }
-    };
-
-    loadData();
-  }, [searchTerm, statusFilter, activeTab]);
-
-  // Handle refresh
+  // Handle refresh - refetch both datasets
   const handleRefresh = () => {
     logger.info("Refreshing Team view data", {}, "TeamView");
-    setIsLoading(true);
-    setError(null);
-    // This is a bit of a hack for demo purposes - in reality we'd invalidate cache and re-fetch
-    setTimeout(() => {
-      const jiraService = JiraServiceFactory.getService();
-
-      Promise.all([
-        jiraService.getTicketsWithMRs({
-          search: searchTerm,
-          statuses:
-            statusFilter && statusFilter !== "all"
-              ? [statusFilter as JiraTicketStatus]
-              : undefined,
-          skipCache: true,
-        }),
-        jiraService.getMergeRequestsWithJira(true),
-      ])
-        .then(([ticketsData, mrsData]) => {
-          setTickets(ticketsData);
-          setMergeRequests(mrsData);
-          setIsLoading(false);
-        })
-        .catch((err) => {
-          console.error("Error refreshing:", err);
-          setError("Failed to refresh data. Please try again.");
-          setIsLoading(false);
-        });
-    }, 500);
+    refetchTickets();
+    refetchMRs();
   };
+
+  // No need for useEffect to load data, hooks handle it.
+
+  // Filtering for the TicketSummaryTable is now handled by passing `jiraOptions` to the hook.
+  const filteredTickets = tickets; // The hook should return data respecting the options
 
   return (
     <div className="space-y-6">
@@ -159,6 +111,7 @@ export function TeamView({}: TeamViewProps) {
         </TabsList>
       </Tabs>
 
+      {/* Filter UI */}
       <div className="flex gap-4 items-center">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -166,8 +119,8 @@ export function TeamView({}: TeamViewProps) {
             type="search"
             placeholder={
               activeTab === "overview"
-                ? "Search tickets or MRs..."
-                : "Search tickets..."
+                ? "Search tickets or MRs..." // Search might need client-side filtering for overview
+                : "Search tickets..." // Search handled by hook options for tickets tab
             }
             className="pl-8"
             value={searchTerm}
@@ -175,22 +128,20 @@ export function TeamView({}: TeamViewProps) {
           />
         </div>
 
+        {/* Status filter only applies when the 'tickets' tab is active */}
         {activeTab === "tickets" && (
           <div className="flex gap-2">
-            <Select
-              value={statusFilter || "all"}
-              onValueChange={setStatusFilter}
-            >
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-[160px]">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="To Do">To Do</SelectItem>
-                <SelectItem value="In Progress">In Progress</SelectItem>
-                <SelectItem value="In Review">In Review</SelectItem>
-                <SelectItem value="Done">Done</SelectItem>
-                <SelectItem value="Blocked">Blocked</SelectItem>
+                {Object.values(JiraTicketStatus).map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {status}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
 
@@ -207,33 +158,37 @@ export function TeamView({}: TeamViewProps) {
         </div>
       )}
 
+      {/* Render content based on active tab */}
       {activeTab === "overview" ? (
         <div className="space-y-8">
           <MetricsDashboard
-            tickets={tickets}
+            // Pass the potentially *unfiltered* tickets and *all* MRs for accurate overview metrics
+            tickets={ticketsData || []} // Or adjust if hook provides unfiltered base
             mergeRequests={mergeRequests}
             isLoading={isLoading}
           />
-
           <div>
             <h2 className="text-xl font-semibold mb-4">
               Tickets Requiring Attention
             </h2>
+            {/* Filter tickets requiring attention client-side for the overview */}
             <TicketSummaryTable
-              tickets={tickets.filter(
+              tickets={(ticketsData || []).filter(
                 (t) =>
-                  t.ticket.status === "Blocked" ||
-                  t.overdueMRs > 0 ||
-                  t.stalledMRs > 0
+                  t.ticket.status === JiraTicketStatus.BLOCKED ||
+                  (t.overdueMRs || 0) > 0 ||
+                  (t.stalledMRs || 0) > 0
               )}
               isLoading={isLoading}
             />
           </div>
         </div>
       ) : (
+        // Tickets Tab
         <div>
           <h2 className="text-xl font-semibold mb-4">All Tickets</h2>
-          <TicketSummaryTable tickets={tickets} isLoading={isLoading} />
+          {/* Pass the filteredTickets (data directly from the hook which respects filters) */}
+          <TicketSummaryTable tickets={filteredTickets} isLoading={isLoading} />
         </div>
       )}
     </div>

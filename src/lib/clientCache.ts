@@ -1,3 +1,4 @@
+// File: src/lib/clientCache.ts
 /**
  * Client-side cache for MR data to prevent unnecessary API calls
  * This is separate from the server-side cache in cache.ts
@@ -22,10 +23,10 @@ interface MRResponseData {
   };
 }
 
-// Cache TTL in milliseconds (1 minute)
+// Cache TTL in milliseconds (e.g., 1 minute for client-side)
 const CACHE_TTL = 60 * 1000 * 60;
 
-// Global cache storage (will persist between page navigations)
+// Global cache storage (will persist between page navigations within the same session)
 const globalCache: Record<string, CachedData<any>> = {};
 
 export const clientCache = {
@@ -77,9 +78,23 @@ export const clientCache = {
       delete globalCache[key];
     });
   },
+
+  /**
+   * Get the current number of items in the cache
+   */
+  getSize(): number {
+    // Clean up expired items before counting
+    const now = Date.now();
+    Object.keys(globalCache).forEach((key) => {
+      if (globalCache[key].expiresAt < now) {
+        delete globalCache[key];
+      }
+    });
+    return Object.keys(globalCache).length;
+  },
 };
 
-// Generate a consistent cache key for MR data
+// Generate a consistent cache key for MR data (remains the same)
 export function getMRCacheKey(endpoint: string, page: number): string {
   return `mrs-${endpoint}-page-${page}`;
 }

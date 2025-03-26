@@ -1,18 +1,13 @@
-/**
- * MR-Jira Association Service
- *
- * Builds and maintains mappings between GitLab MRs and Jira tickets.
- * Handles automatic extraction of Jira ticket IDs as well as manual associations.
- */
-
+// File: src/services/MRJiraAssociationService.ts
 import { GitLabMR } from "@/lib/gitlab";
 import { JiraTicket, GitLabMRWithJira } from "@/types/Jira";
-import { jiraService } from "./JiraServiceFactory";
+import { jiraService } from "./JiraServiceFactory"; // Uses /api/jira
 import { logger } from "@/lib/logger";
 import {
   getMostLikelyJiraKey,
   extractJiraReferences,
   JiraParserConfig,
+  JiraReferenceResult,
 } from "@/utils/jiraReferenceParser";
 
 // Cache key for storing manual associations in localStorage
@@ -28,32 +23,26 @@ interface ManualAssociation {
 // Configuration for the association service
 interface AssociationConfig {
   parserConfig?: JiraParserConfig;
-  preferredProjects?: string[];
-  enableCache?: boolean;
-  cacheTTL?: number; // milliseconds
+  enableCache?: boolean; // Cache for fetched Jira tickets within this service run
+  // TTL is less relevant here as UnifiedDataService manages overall caching
 }
 
 // Default configuration
 const defaultConfig: AssociationConfig = {
   parserConfig: {
-    preferredProjects: [],
+    preferredProjects: [], // Consider loading from env var if needed
   },
   enableCache: true,
-  cacheTTL: 30 * 60 * 1000, // 30 minutes
 };
 
-// In-memory cache
-interface CacheEntry {
-  data: Map<number, string>;
-  timestamp: number;
-  validUntil: number;
-}
+// In-memory cache for Jira tickets *during a single enhancement run*
+// This avoids fetching the same ticket multiple times when processing a batch of MRs.
+// It's cleared on each call to enhanceMRsWithJira or invalidateCache.
+let runTimeJiraTicketCache: Map<string, JiraTicket | null> = new Map();
 
 class MRJiraAssociationService {
   private config: AssociationConfig;
   private manualAssociations: Map<number, string> = new Map();
-  private associationCache: CacheEntry | null = null;
-  private jiraTicketCache: Map<string, JiraTicket> = new Map();
 
   constructor(config: Partial<AssociationConfig> = {}) {
     this.config = { ...defaultConfig, ...config };
@@ -64,6 +53,7 @@ class MRJiraAssociationService {
    * Load manual associations from localStorage
    */
   private loadManualAssociations(): void {
+    if (typeof window === "undefined") return; // Skip localStorage on server
     try {
       const stored = localStorage.getItem(MANUAL_ASSOCIATIONS_CACHE_KEY);
       if (stored) {
@@ -77,7 +67,6 @@ class MRJiraAssociationService {
       }
     } catch (error) {
       logger.error("Error loading manual MR-Jira associations", { error });
-      // Initialize with empty map on error
       this.manualAssociations = new Map();
     }
   }
@@ -86,6 +75,7 @@ class MRJiraAssociationService {
    * Save manual associations to localStorage
    */
   private saveManualAssociations(): void {
+    if (typeof window === "undefined") return; // Skip localStorage on server
     try {
       const data: ManualAssociation[] = Array.from(
         this.manualAssociations.entries()
@@ -108,10 +98,7 @@ class MRJiraAssociationService {
   addManualAssociation(mrId: number, jiraKey: string): void {
     this.manualAssociations.set(mrId, jiraKey);
     this.saveManualAssociations();
-
-    // Invalidate cache
-    this.invalidateCache();
-
+    // No need to invalidate internal cache here, UnifiedDataService handles it
     logger.info("Added manual MR-Jira association", { mrId, jiraKey });
   }
 
@@ -122,199 +109,148 @@ class MRJiraAssociationService {
     if (this.manualAssociations.has(mrId)) {
       this.manualAssociations.delete(mrId);
       this.saveManualAssociations();
-
-      // Invalidate cache
-      this.invalidateCache();
-
+      // No need to invalidate internal cache here, UnifiedDataService handles it
       logger.info("Removed manual MR-Jira association", { mrId });
     }
   }
 
   /**
-   * Get the Jira key associated with an MR
+   * Get the most likely Jira key associated with an MR, considering manual overrides.
    */
   getJiraKeyForMR(mr: GitLabMR): string | null {
-    // Check manual associations first (highest priority)
+    // Check manual associations first
     if (this.manualAssociations.has(mr.id)) {
       return this.manualAssociations.get(mr.id) || null;
     }
-
-    // Check cache if enabled
-    if (this.config.enableCache && this.associationCache) {
-      if (Date.now() < this.associationCache.validUntil) {
-        const cachedKey = this.associationCache.data.get(mr.id);
-        if (cachedKey) return cachedKey;
-      } else {
-        // Cache expired, clear it
-        this.invalidateCache();
-      }
-    }
-
-    // Extract from MR fields
+    // Extract automatically
     return getMostLikelyJiraKey(mr, this.config.parserConfig);
   }
 
   /**
-   * Build association map for a list of MRs
+   * Fetch Jira ticket data for a given key, using a short-lived run-time cache.
    */
-  async buildAssociationMap(mrs: GitLabMR[]): Promise<Map<number, string>> {
-    // Check if we can use the cached associations
-    if (
-      this.config.enableCache &&
-      this.associationCache &&
-      Date.now() < this.associationCache.validUntil
-    ) {
-      logger.info("Using cached MR-Jira associations");
-      return new Map(this.associationCache.data);
-    }
-
-    // Build new associations
-    const associationMap = new Map<number, string>();
-
-    for (const mr of mrs) {
-      const jiraKey = this.getJiraKeyForMR(mr);
-      if (jiraKey) {
-        associationMap.set(mr.id, jiraKey);
-      }
-    }
-
-    logger.info("Built MR-Jira association map", {
-      total: mrs.length,
-      associated: associationMap.size,
-    });
-
-    // Cache the result if enabled
-    if (this.config.enableCache) {
-      const now = Date.now();
-      this.associationCache = {
-        data: new Map(associationMap),
-        timestamp: now,
-        validUntil: now + (this.config.cacheTTL || 0),
-      };
-    }
-
-    return associationMap;
-  }
-
-  /**
-   * Fetch Jira ticket data for a given key
-   */
-  async fetchJiraTicket(key: string): Promise<JiraTicket | null> {
-    // Check cache first
-    if (this.jiraTicketCache.has(key)) {
-      return this.jiraTicketCache.get(key) || null;
+  private async fetchJiraTicketWithRunCache(
+    key: string
+  ): Promise<JiraTicket | null> {
+    // Check run-time cache first
+    if (this.config.enableCache && runTimeJiraTicketCache.has(key)) {
+      return runTimeJiraTicketCache.get(key) || null;
     }
 
     try {
+      // Fetch using the JiraService (which uses /api/jira and its own cache)
       const ticket = await jiraService.getTicket(key);
 
-      // Cache the result
-      if (ticket) {
-        this.jiraTicketCache.set(key, ticket);
+      // Store in run-time cache
+      if (this.config.enableCache) {
+        runTimeJiraTicketCache.set(key, ticket);
       }
-
       return ticket;
     } catch (error) {
-      logger.error("Error fetching Jira ticket", { key, error });
+      logger.error(
+        "Error fetching Jira ticket during enhancement",
+        { key, error },
+        "MRJiraAssociationService"
+      );
+      // Cache the null result to avoid refetching a known failure during this run
+      if (this.config.enableCache) {
+        runTimeJiraTicketCache.set(key, null);
+      }
       return null;
     }
   }
 
   /**
-   * Enhance GitLab MRs with Jira ticket information
+   * Enhance GitLab MRs with Jira ticket information.
+   * @param mrs - The base list of GitLab MRs.
+   * @returns A promise resolving to the list of MRs enhanced with Jira data.
    */
   async enhanceMRsWithJira(mrs: GitLabMR[]): Promise<GitLabMRWithJira[]> {
-    // Build the association map
-    const associationMap = await this.buildAssociationMap(mrs);
+    // Clear the run-time cache at the start of each batch enhancement
+    runTimeJiraTicketCache.clear();
 
-    // Create enhanced MRs with Jira information
-    const enhancedMRs: GitLabMRWithJira[] = [];
-
-    for (const mr of mrs) {
-      const jiraKey = associationMap.get(mr.id);
+    const associationPromises = mrs.map(async (mr) => {
+      const jiraKey = this.getJiraKeyForMR(mr); // Considers manual override
 
       if (!jiraKey) {
-        // No Jira association, just include the original MR
-        enhancedMRs.push({
-          ...mr,
-        });
-        continue;
+        return { ...mr }; // Return original MR if no key found
       }
 
-      // Try to get full ticket data
-      const jiraTicket = await this.fetchJiraTicket(jiraKey);
+      // Fetch ticket data using the run-time cached fetcher
+      const jiraTicket = await this.fetchJiraTicketWithRunCache(jiraKey);
 
-      if (jiraTicket) {
-        // Full ticket data available
-        enhancedMRs.push({
-          ...mr,
-          jiraTicket,
-          jiraTicketKey: jiraKey,
-        });
-      } else {
-        // Only key available
-        enhancedMRs.push({
-          ...mr,
-          jiraTicketKey: jiraKey,
-        });
-      }
-    }
+      return {
+        ...mr,
+        jiraTicket: jiraTicket || undefined, // Ensure it's undefined if null
+        jiraTicketKey: jiraKey,
+      };
+    });
+
+    const enhancedMRs = await Promise.all(associationPromises);
 
     logger.info("Enhanced MRs with Jira data", {
-      total: mrs.length,
-      withTickets: enhancedMRs.filter((mr) => mr.jiraTicket).length,
-      withKeys: enhancedMRs.filter((mr) => mr.jiraTicketKey).length,
+      totalMRs: mrs.length,
+      mrsWithJiraKey: enhancedMRs.filter((mr) => mr.jiraTicketKey).length,
+      mrsWithFullTicket: enhancedMRs.filter((mr) => mr.jiraTicket).length,
     });
+
+    // Clear run-time cache after processing is complete
+    runTimeJiraTicketCache.clear();
 
     return enhancedMRs;
   }
 
   /**
-   * Get all Jira references for an MR
+   * Get all potential Jira references for an MR, including confidence scores and manual overrides.
    */
-  getAllJiraReferences(mr: GitLabMR): { key: string; confidence: number }[] {
-    const refs = extractJiraReferences(mr, this.config.parserConfig);
+  getAllJiraReferences(
+    mr: GitLabMR
+  ): { key: string; confidence: number; source: string }[] {
+    const refs: JiraReferenceResult[] = extractJiraReferences(
+      mr,
+      this.config.parserConfig
+    );
+    const results: { key: string; confidence: number; source: string }[] = [];
+    const seenKeys = new Set<string>();
 
-    // Add manual association if it exists with 100% confidence
+    // Check manual association first
     if (this.manualAssociations.has(mr.id)) {
       const manualKey = this.manualAssociations.get(mr.id)!;
-
-      // Check if it's already in the list
-      const existing = refs.find((ref) => ref.key === manualKey);
-      if (existing) {
-        // Update confidence to 1.0
-        existing.confidence = 1.0;
-      } else {
-        // Add to list
-        refs.unshift({
-          key: manualKey,
-          source: "manual",
-          confidence: 1.0,
-          pattern: "manual",
-        });
-      }
+      results.push({ key: manualKey, confidence: 1.0, source: "manual" });
+      seenKeys.add(manualKey);
     }
 
-    return refs.map((ref) => ({ key: ref.key, confidence: ref.confidence }));
+    // Add automatic references, avoiding duplicates
+    refs.forEach((ref) => {
+      if (!seenKeys.has(ref.key)) {
+        results.push({
+          key: ref.key,
+          confidence: ref.confidence,
+          source: ref.source,
+        });
+        seenKeys.add(ref.key);
+      }
+    });
+
+    // Sort by confidence descending
+    return results.sort((a, b) => b.confidence - a.confidence);
   }
 
   /**
-   * Invalidate the association cache
+   * Invalidate internal caches (currently only the run-time ticket cache).
+   * Called by UnifiedDataService when base data might have changed.
    */
   invalidateCache(): void {
-    this.associationCache = null;
-    this.jiraTicketCache.clear();
-    logger.info("Invalidated MR-Jira association cache");
+    runTimeJiraTicketCache.clear();
+    logger.info("Invalidated MR-Jira association run-time cache");
   }
 
   /**
-   * Update service configuration
+   * Update service configuration.
    */
   updateConfig(newConfig: Partial<AssociationConfig>): void {
     this.config = { ...this.config, ...newConfig };
-
-    // If config changed significantly, invalidate cache
-    this.invalidateCache();
+    // No cache invalidation needed here as config affects future runs
   }
 }
 

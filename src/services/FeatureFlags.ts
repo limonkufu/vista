@@ -11,18 +11,17 @@ export enum FeatureFlag {
 
 // Default configuration for production and development
 const DEFAULT_FLAGS = {
-  [FeatureFlag.ROLE_BASED_VIEWS]: false,
-  [FeatureFlag.PO_VIEW]: false,
-  [FeatureFlag.DEV_VIEW]: false,
-  [FeatureFlag.TEAM_VIEW]: false,
-  [FeatureFlag.JIRA_INTEGRATION]: false,
+  [FeatureFlag.ROLE_BASED_VIEWS]: true,
+  [FeatureFlag.PO_VIEW]: true,
+  [FeatureFlag.DEV_VIEW]: true,
+  [FeatureFlag.TEAM_VIEW]: true,
+  [FeatureFlag.JIRA_INTEGRATION]: true,
 };
 
 // Development defaults override production defaults
 const DEV_MODE_DEFAULTS = {
   ...DEFAULT_FLAGS,
-  // Enable specific flags for development by default
-  // [FeatureFlag.ROLE_BASED_VIEWS]: true,
+  // All flags are already enabled by default
 };
 
 const STORAGE_KEY = "gitlab-mrs-dashboard-feature-flags";

@@ -1,3 +1,4 @@
+// File: src/components/Navbar.tsx
 "use client";
 
 import Link from "next/link";
@@ -6,7 +7,6 @@ import { cn } from "@/lib/utils";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { UserSelector } from "@/components/UserSelector/UserSelector";
 import { ThresholdSettings } from "@/components/ThresholdSettings/ThresholdSettings";
-import { LabsMenu } from "@/components/LabsMenu";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,12 +19,13 @@ import {
   Database,
   BarChart2,
   GitMerge,
-  Server,
+  Server, // Keep Server icon? Maybe rename item
   Smartphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { clientCache } from "@/lib/clientCache";
 import { toast } from "sonner";
+import { cacheManager } from "@/lib/cacheManager"; // Import cacheManager
 
 // Type definition to add static method to the Navbar component
 interface NavbarComponent extends React.FC {
@@ -34,12 +35,8 @@ interface NavbarComponent extends React.FC {
 export const Navbar: NavbarComponent = function Navbar() {
   const pathname = usePathname();
 
-  const navItems = [
-    { name: "Dashboard", href: "/dashboard" },
-    { name: "Old MRs", href: "/dashboard/too-old" },
-    { name: "Inactive MRs", href: "/dashboard/not-updated" },
-    { name: "Pending Review", href: "/dashboard/pending-review" },
-  ];
+  // Simplified nav items, assuming EnhancedNavbar handles view switching
+  const navItems = [{ name: "Dashboard", href: "/dashboard" }];
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -49,6 +46,7 @@ export const Navbar: NavbarComponent = function Navbar() {
             <span className="font-bold">GitLab MR Dashboard</span>
           </Link>
         </div>
+        {/* Basic nav for fallback, EnhancedNavbar will override */}
         <nav className="flex-1">
           <ul className="flex gap-4">
             {navItems.map((item) => (
@@ -81,7 +79,6 @@ Navbar.UserTools = function NavbarUserTools() {
       <UserSelector />
       <ThresholdSettings />
       <ThemeSwitcher />
-      <LabsMenu />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="icon" title="Cache options">
@@ -91,21 +88,10 @@ Navbar.UserTools = function NavbarUserTools() {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem
-            onClick={async () => {
+            onClick={() => {
               try {
-                const response = await fetch("/api/cache", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({ action: "clear_all" }),
-                });
-
-                if (response.ok) {
-                  toast.success("All caches cleared successfully");
-                } else {
-                  toast.error("Failed to clear caches");
-                }
+                cacheManager.clearAll(); // Use the updated cacheManager method
+                toast.success("All relevant caches cleared successfully");
               } catch (error) {
                 toast.error("Error clearing caches");
                 console.error(error);
@@ -117,21 +103,10 @@ Navbar.UserTools = function NavbarUserTools() {
           </DropdownMenuItem>
 
           <DropdownMenuItem
-            onClick={async () => {
+            onClick={() => {
               try {
-                const response = await fetch("/api/cache", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({ action: "clear_gitlab_api" }),
-                });
-
-                if (response.ok) {
-                  toast.success("GitLab API cache cleared successfully");
-                } else {
-                  toast.error("Failed to clear GitLab API cache");
-                }
+                cacheManager.clearGitLabCache(); // Use the updated cacheManager method
+                toast.success("GitLab API cache cleared successfully");
               } catch (error) {
                 toast.error("Error clearing GitLab API cache");
                 console.error(error);
@@ -142,36 +117,33 @@ Navbar.UserTools = function NavbarUserTools() {
             <span>Clear GitLab API cache</span>
           </DropdownMenuItem>
 
+          {/* Removed: Clear API response caches item */}
+          {/* Keep Clear Jira API cache */}
           <DropdownMenuItem
-            onClick={async () => {
+            onClick={() => {
               try {
-                const response = await fetch("/api/cache", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({ action: "clear_api_responses" }),
-                });
-
-                if (response.ok) {
-                  toast.success("API response caches cleared successfully");
-                } else {
-                  toast.error("Failed to clear API response caches");
-                }
+                cacheManager.clearJiraCache(); // Use the updated cacheManager method
+                toast.success("Jira API cache cleared successfully");
               } catch (error) {
-                toast.error("Error clearing API response caches");
+                toast.error("Error clearing Jira API cache");
                 console.error(error);
               }
             }}
           >
+            {/* Use a Jira-related icon if available, or keep Server */}
             <Server className="mr-2 h-4 w-4" />
-            <span>Clear API response caches</span>
+            <span>Clear Jira API cache</span>
           </DropdownMenuItem>
 
           <DropdownMenuItem
             onClick={() => {
-              clientCache.clear();
-              toast.success("Client cache cleared successfully");
+              try {
+                cacheManager.clearClientCache(); // Use the updated cacheManager method
+                toast.success("Client cache cleared successfully");
+              } catch (error) {
+                toast.error("Error clearing client cache");
+                console.error(error);
+              }
             }}
           >
             <Smartphone className="mr-2 h-4 w-4" />
@@ -183,8 +155,8 @@ Navbar.UserTools = function NavbarUserTools() {
           <DropdownMenuItem
             onClick={async () => {
               try {
+                // Fetching stats might need adjustment if API route changes
                 const response = await fetch("/api/cache");
-
                 if (response.ok) {
                   const data = await response.json();
                   console.log("Cache Statistics:", data.stats);

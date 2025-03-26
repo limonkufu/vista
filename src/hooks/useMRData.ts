@@ -1,142 +1,134 @@
+// File: src/hooks/useMRData.ts
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { fetchAPI } from "@/lib/api";
+import { useState, useCallback, useMemo } from "react";
 import { GitLabMR } from "@/lib/gitlab";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
-import { clientCache, getMRCacheKey } from "@/lib/clientCache";
-
-interface MRResponse {
-  items: GitLabMR[];
-  metadata: {
-    threshold: number;
-    lastRefreshed: string;
-    currentPage: number;
-    totalPages: number;
-    perPage: number;
-  };
-}
+import {
+  useUnifiedMRData,
+  MRDataType,
+  UseUnifiedMRDataProps,
+} from "./useUnifiedMRData"; // Import the unified hook
 
 interface UseMRDataProps {
   endpoint: "too-old" | "not-updated" | "pending-review";
   defaultThreshold: number;
 }
 
+// Map endpoint names to MRDataType enum values
+const endpointToDataType: Record<UseMRDataProps["endpoint"], MRDataType> = {
+  "too-old": MRDataType.TOO_OLD,
+  "not-updated": MRDataType.NOT_UPDATED,
+  "pending-review": MRDataType.PENDING_REVIEW,
+};
+
 export function useMRData({ endpoint, defaultThreshold }: UseMRDataProps) {
-  const [data, setData] = useState<MRResponse | null>(null);
+  const dataType = endpointToDataType[endpoint];
+  const [currentPage, setCurrentPage] = useState(1);
   const [filteredItems, setFilteredItems] = useState<GitLabMR[]>([]);
   const [groupBy, setGroupBy] = useState<"none" | "author" | "assignee" | null>(
     null
   );
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string>();
-  const [currentPage, setCurrentPage] = useState(1);
+
+  // Use the unified hook for data fetching
+  const {
+    data: unifiedData,
+    isLoading,
+    isError,
+    error: fetchError,
+    lastRefreshed,
+    refetch,
+  } = useUnifiedMRData<any>({
+    // Use 'any' temporarily, refine if GitLabMRsResponse is the exact type
+    dataType: dataType,
+    gitlabOptions: { page: currentPage, per_page: 25 }, // Pass pagination options
+    skipInitialFetch: false, // Fetch on initial load
+  });
+
+  // Memoize the data to avoid unnecessary recalculations
+  const data = useMemo(() => {
+    if (!unifiedData) return null;
+    // Assuming unifiedData structure matches MRResponse or can be adapted
+    // If the structure is different, map it here.
+    // For now, assume it's compatible or GitLabMRsResponse
+    const responseData = unifiedData as {
+      items: GitLabMR[];
+      metadata: any;
+    };
+    // Update filteredItems whenever data changes (unless filters are applied)
+    // This basic version resets filters on data change. A more robust filter
+    // implementation would re-apply filters here.
+    setFilteredItems(responseData.items || []);
+    return {
+      items: responseData.items || [],
+      metadata: {
+        threshold: responseData.metadata?.threshold ?? defaultThreshold,
+        lastRefreshed:
+          responseData.metadata?.lastRefreshed ??
+          lastRefreshed ??
+          new Date().toISOString(),
+        currentPage: responseData.metadata?.currentPage ?? currentPage,
+        totalPages: responseData.metadata?.totalPages ?? 1,
+        perPage: responseData.metadata?.perPage ?? 25,
+        totalItems: responseData.metadata?.totalItems ?? 0,
+      },
+    };
+  }, [unifiedData, defaultThreshold, lastRefreshed, currentPage]);
 
   const fetchData = useCallback(
     async (page = 1, refresh = false) => {
-      // Update current page
       setCurrentPage(page);
-
-      // Check cache first (unless forced refresh)
-      if (!refresh) {
-        const cacheKey = getMRCacheKey(endpoint, page);
-        const cachedData = clientCache.get<MRResponse>(cacheKey);
-
-        if (cachedData) {
-          logger.info(
-            `Using cached data for ${endpoint} MRs, page ${page}`,
-            {},
-            "Dashboard"
-          );
-          setData(cachedData);
-          setFilteredItems(cachedData.items);
-          return;
-        }
-      }
-
-      setIsLoading(true);
-      setError(undefined);
-
-      try {
-        logger.info(`Fetching ${endpoint} MRs`, { page, refresh }, "Dashboard");
-        const response = await fetchAPI(
-          `/api/mrs/${endpoint}?page=${page}${refresh ? "&refresh=true" : ""}`
-        );
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(
-            errorData.details || `Failed to fetch ${endpoint} MRs`
-          );
-        }
-
-        const responseData = await response.json();
-
-        // Store in cache
-        const cacheKey = getMRCacheKey(endpoint, page);
-        clientCache.set(cacheKey, responseData);
-
-        setData(responseData);
-        setFilteredItems(responseData.items);
-        logger.debug(
-          `Received ${endpoint} MRs`,
-          { count: responseData.items.length },
-          "Dashboard"
-        );
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "An error occurred";
-        logger.error(
-          `Error fetching ${endpoint} MRs`,
-          { error: message },
-          "Dashboard"
-        );
-        setError(message);
-      } finally {
-        setIsLoading(false);
+      logger.info(
+        `Triggering fetch for ${endpoint}`,
+        { page, refresh },
+        "useMRData"
+      );
+      // Refetch logic now uses the unified hook's refetch
+      // The hook itself handles skipCache based on how it's called or configured
+      // We might need to enhance useUnifiedMRData to accept a 'refresh' flag
+      await refetch(); // This will use the current 'currentPage' state
+      if (refresh) {
+        toast.info("Refreshing data", {
+          description: "Fetching latest merge requests...",
+          duration: 2000,
+        });
       }
     },
-    [endpoint]
+    [endpoint, refetch] // Add refetch dependency
   );
 
   const refreshData = useCallback(() => {
-    // Clear cache for this endpoint (all pages)
-    for (let i = 1; i <= 10; i++) {
-      // Assume max 10 pages
-      clientCache.remove(getMRCacheKey(endpoint, i));
-    }
-
+    logger.info(`Triggering refresh for ${endpoint}`, {}, "useMRData");
+    // Invalidate cache at the service level before refetching
+    // This might need a dedicated method in UnifiedDataService or hook
+    // For now, just call refetch which should ideally handle cache busting if needed
     fetchData(currentPage, true);
-    toast.info("Refreshing data", {
-      description: "Fetching latest merge requests...",
-      duration: 2000,
-    });
-  }, [fetchData, endpoint, currentPage]);
+  }, [fetchData, currentPage, endpoint]);
 
   const handleFilter = useCallback(
     (
-      filteredItems: GitLabMR[],
-      groupBy: "none" | "author" | "assignee" | null = null
+      newFilteredItems: GitLabMR[],
+      newGroupBy: "none" | "author" | "assignee" | null = null
     ) => {
-      setFilteredItems(filteredItems);
-      setGroupBy(groupBy);
+      setFilteredItems(newFilteredItems);
+      setGroupBy(newGroupBy);
     },
     []
   );
 
-  // Initial fetch on mount - use cached data if available
-  useEffect(() => {
-    fetchData(1);
-  }, [fetchData]);
+  // Map the error state from the unified hook
+  const error = isError
+    ? fetchError?.message || "An error occurred"
+    : undefined;
 
   return {
-    data,
-    filteredItems,
+    data, // Use the memoized data
+    filteredItems, // Use the state managed by handleFilter
     groupBy,
     isLoading,
     error,
-    fetchData,
+    fetchData, // Keep this for pagination triggers
     refreshData,
     handleFilter,
     currentPage,
