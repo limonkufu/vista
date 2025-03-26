@@ -1,7 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -13,7 +14,6 @@ import {
 } from "@/components/ui/card";
 import { getThresholds } from "@/lib/config";
 import { ViewType } from "@/types/ViewTypes";
-import { FeatureFlags, FeatureFlag } from "@/services/FeatureFlags";
 import { useLayout } from "@/contexts/LayoutContext";
 import {
   UnifiedDashboard,
@@ -69,16 +69,28 @@ export default function DashboardPage() {
     <UnifiedDashboard>
       <OriginalDashboardWrapper>
         <div className="relative">
-          {/* Hero Section */}
-          <div className="relative overflow-hidden bg-background">
-            <div className="absolute inset-0 bg-gradient-to-b from-primary/5 to-accent/5" />
-            <div className="absolute inset-0 bg-grid-pattern opacity-5" />
-            <div className="container relative py-20">
-              <div className="max-w-3xl mx-auto text-center space-y-6">
-                <h2 className="text-2xl font-semibold text-muted-foreground">
+          {/* Hero Section with Background Image */}
+          <div className="relative h-[40vh] w-full overflow-hidden">
+            {/* Hero Image */}
+            <div className="absolute inset-0">
+              <Image
+                src="/hero.webp"
+                alt="VISTA Dashboard Hero"
+                fill
+                className="object-cover"
+                priority
+              />
+              {/* Gradient Overlay */}
+              <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
+            </div>
+
+            {/* Content */}
+            <div className="relative h-full container">
+              <div className="absolute bottom-8 left-0 right-0 text-center">
+                <h1 className="text-4xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500">
                   Vibe Into Software Tasks & Activities
-                </h2>
-                <p className="text-lg text-muted-foreground">
+                </h1>
+                <p className="mt-2 text-xl text-foreground/80">
                   Transform your workflow with context-aware project management
                 </p>
               </div>
