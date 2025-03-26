@@ -483,8 +483,31 @@ export const MockJiraService = {
             id: Math.floor(Math.random() * 100),
             name: SAMPLE_USERS[Math.floor(Math.random() * SAMPLE_USERS.length)]
               .name,
+            username: `user${Math.floor(Math.random() * 5) + 1}`,
           },
-          jiraKey: ticket.key,
+          // Add additional required fields
+          source_branch: `feature/branch-${i}`,
+          target_branch: "main",
+          merge_status: ["can_be_merged", "cannot_be_merged", "unchecked"][
+            Math.floor(Math.random() * 3)
+          ],
+          user_notes_count: Math.floor(Math.random() * 10),
+          upvotes: Math.floor(Math.random() * 5),
+          downvotes: Math.floor(Math.random() * 2),
+          reviewers: Array.from(
+            { length: Math.floor(Math.random() * 4) },
+            (_, j) => {
+              const reviewer =
+                SAMPLE_USERS[Math.floor(Math.random() * SAMPLE_USERS.length)];
+              return {
+                id: j + 1,
+                name: reviewer.name,
+                username: `reviewer${j + 1}`,
+                avatar_url: undefined,
+              };
+            }
+          ),
+          jiraTicketKey: ticket.key,
           jiraTicket: ticket,
         }));
 
@@ -557,7 +580,33 @@ export const MockJiraService = {
             id: options?.authorId || Math.floor(Math.random() * 5) + 1,
             name: SAMPLE_USERS[Math.floor(Math.random() * SAMPLE_USERS.length)]
               .name,
+            username: `user${
+              options?.authorId || Math.floor(Math.random() * 5) + 1
+            }`,
           },
+          // Add additional GitLab MR fields needed by DevView
+          source_branch: `feature/branch-${index}`,
+          target_branch: "main",
+          merge_status: ["can_be_merged", "cannot_be_merged", "unchecked"][
+            Math.floor(Math.random() * 3)
+          ],
+          user_notes_count: Math.floor(Math.random() * 10),
+          upvotes: Math.floor(Math.random() * 5),
+          downvotes: Math.floor(Math.random() * 2),
+          // Add reviewers
+          reviewers: Array.from(
+            { length: Math.floor(Math.random() * 4) },
+            (_, i) => {
+              const reviewer =
+                SAMPLE_USERS[Math.floor(Math.random() * SAMPLE_USERS.length)];
+              return {
+                id: i + 1,
+                name: reviewer.name,
+                username: `reviewer${i + 1}`,
+                avatar_url: undefined,
+              };
+            }
+          ),
           jiraTicketKey: hasJiraTicket ? ticket.key : undefined,
           jiraTicket: hasJiraTicket ? ticket : undefined,
         };

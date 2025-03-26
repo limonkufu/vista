@@ -96,7 +96,22 @@ export interface GitLabMRWithJira {
   author: {
     id: number;
     name: string;
+    username: string;
   };
+  
+  // Additional GitLab MR fields needed by DevView
+  source_branch: string;
+  target_branch: string;
+  merge_status: string;
+  user_notes_count: number;
+  upvotes: number;
+  downvotes: number;
+  reviewers: {
+    id: number;
+    name: string;
+    username: string;
+    avatar_url?: string;
+  }[];
   
   // Jira-specific fields
   jiraTicket?: JiraTicket;

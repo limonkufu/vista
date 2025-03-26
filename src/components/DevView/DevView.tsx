@@ -48,9 +48,8 @@ function categorizeMRs(
   return categorized;
 }
 
-interface DevViewProps {
-  // Any props needed for the Dev view
-}
+// Use Record<string, never> instead of empty interface
+type DevViewProps = Record<string, never>;
 
 export function DevView({}: DevViewProps) {
   const [isLoading, setIsLoading] = useState(true);
@@ -66,8 +65,8 @@ export function DevView({}: DevViewProps) {
   });
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [authorFilter, setAuthorFilter] = useState<string>("");
-  const [projectFilter, setProjectFilter] = useState<string>("");
+  const [authorFilter, setAuthorFilter] = useState<string>("all");
+  const [projectFilter, setProjectFilter] = useState<string>("all");
 
   // Load MRs
   useEffect(() => {
@@ -94,13 +93,13 @@ export function DevView({}: DevViewProps) {
           );
         }
 
-        if (authorFilter) {
+        if (authorFilter && authorFilter !== "all") {
           filteredMRs = filteredMRs.filter(
             (mr) => mr.author.username === authorFilter
           );
         }
 
-        if (projectFilter) {
+        if (projectFilter && projectFilter !== "all") {
           filteredMRs = filteredMRs.filter(
             (mr) => mr.project_id.toString() === projectFilter
           );
@@ -136,7 +135,7 @@ export function DevView({}: DevViewProps) {
     setTimeout(() => {
       const jiraService = JiraServiceFactory.getService();
       jiraService
-        .getMergeRequestsWithJira(true)
+        .getMergeRequestsWithJira({ skipCache: true })
         .then((mrs) => {
           const filtered = mrs.filter((mr) => {
             let match = true;
@@ -150,11 +149,11 @@ export function DevView({}: DevViewProps) {
                   mr.source_branch.toLowerCase().includes(searchLower));
             }
 
-            if (authorFilter) {
+            if (authorFilter && authorFilter !== "all") {
               match = match && mr.author.username === authorFilter;
             }
 
-            if (projectFilter) {
+            if (projectFilter && projectFilter !== "all") {
               match = match && mr.project_id.toString() === projectFilter;
             }
 
@@ -211,9 +210,9 @@ export function DevView({}: DevViewProps) {
               <SelectValue placeholder="Author" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Authors</SelectItem>
-              {authors.map((author) => (
-                <SelectItem key={author} value={author}>
+              <SelectItem value="all">All Authors</SelectItem>
+              {authors.map((author, index) => (
+                <SelectItem key={`author-${author}-${index}`} value={author}>
                   {author}
                 </SelectItem>
               ))}
@@ -225,9 +224,9 @@ export function DevView({}: DevViewProps) {
               <SelectValue placeholder="Project" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Projects</SelectItem>
-              {projects.map((project) => (
-                <SelectItem key={project} value={project}>
+              <SelectItem value="all">All Projects</SelectItem>
+              {projects.map((project, index) => (
+                <SelectItem key={`project-${project}-${index}`} value={project}>
                   Project #{project}
                 </SelectItem>
               ))}
@@ -278,8 +277,8 @@ export function DevView({}: DevViewProps) {
                 variant="link"
                 onClick={() => {
                   setSearchTerm("");
-                  setAuthorFilter("");
-                  setProjectFilter("");
+                  setAuthorFilter("all");
+                  setProjectFilter("all");
                 }}
               >
                 Clear filters

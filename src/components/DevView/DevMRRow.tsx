@@ -231,7 +231,7 @@ export function DevMRRow({ mr, statusCategory }: DevMRRowProps) {
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Reviewers:</span>
             <div className="flex -space-x-1">
-              {mr.reviewers.length > 0 ? (
+              {mr.reviewers && mr.reviewers.length > 0 ? (
                 mr.reviewers.slice(0, 3).map((reviewer) => (
                   <TooltipProvider key={reviewer.id}>
                     <Tooltip>
@@ -253,7 +253,7 @@ export function DevMRRow({ mr, statusCategory }: DevMRRowProps) {
               ) : (
                 <span className="text-sm text-muted-foreground">None</span>
               )}
-              {mr.reviewers.length > 3 && (
+              {mr.reviewers && mr.reviewers.length > 3 && (
                 <Avatar className="h-5 w-5 border border-background bg-muted">
                   <AvatarFallback>+{mr.reviewers.length - 3}</AvatarFallback>
                 </Avatar>

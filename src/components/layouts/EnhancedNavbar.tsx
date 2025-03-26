@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { ViewType, DASHBOARD_VIEWS, getViewByType } from "@/types/ViewTypes";
@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { ChevronRight } from "lucide-react";
+import { getRouteForView } from "@/utils/viewNavigation";
 
 export function EnhancedNavbar() {
   const {
@@ -19,6 +20,7 @@ export function EnhancedNavbar() {
     areRoleBasedViewsEnabled,
   } = useLayout();
   const pathname = usePathname();
+  const router = useRouter();
 
   // Only show the view switcher when role-based views are enabled
   if (!areRoleBasedViewsEnabled) {
@@ -32,9 +34,15 @@ export function EnhancedNavbar() {
 
   // Handle view change
   const handleViewChange = (value: string) => {
-    if (value in ViewType) {
-      setActiveView(value as ViewType);
-    }
+    // Convert string to ViewType enum
+    const viewType = value as ViewType;
+
+    // Set the active view in context
+    setActiveView(viewType);
+
+    // Navigate to the appropriate route for this view
+    const route = getRouteForView(viewType);
+    router.push(route);
   };
 
   return (

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -23,6 +24,12 @@ import { ViewPreviewCard } from "@/components/TransitionElements";
 export default function DashboardPage() {
   const thresholds = getThresholds();
   const { areRoleBasedViewsEnabled, isViewAvailable } = useLayout();
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    // Ensure client-side initialization is complete
+    setIsLoaded(true);
+  }, []);
 
   // Content for view preview cards
   const renderPOViewPreview = () => (
@@ -44,6 +51,18 @@ export default function DashboardPage() {
       <p>Get a team-wide perspective with aggregated metrics.</p>
     </div>
   );
+
+  // If not loaded yet, show minimal content to avoid hydration errors
+  if (!isLoaded) {
+    return (
+      <div className="container py-8 space-y-8">
+        <div className="max-w-3xl mx-auto text-center space-y-4">
+          <h1 className="text-4xl font-bold">GitLab MR Dashboard</h1>
+          <p className="text-xl text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <UnifiedDashboard>
