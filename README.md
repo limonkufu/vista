@@ -127,6 +127,13 @@ Required environment variables:
 | `GITLAB_API_TOKEN` | GitLab personal access token |
 | `GITLAB_USER_IDS` | Team member GitLab user IDs (colon-separated) |
 | `API_KEY` | Secret key for API authentication |
+| `JIRA_HOST` | Your Jira instance URL (e.g., <https://your-domain.atlassian.net>) |
+| `JIRA_EMAIL` | Your Jira account email |
+| `JIRA_API_TOKEN` | Your Jira API token |
+| `JIRA_EPIC_LINK_FIELD` | Custom field ID for epic links (default: customfield_10014) |
+| `JIRA_EPIC_NAME_FIELD` | Custom field ID for epic names (default: customfield_10015) |
+| `JIRA_STORY_POINTS_FIELD` | Custom field ID for story points (default: customfield_10016) |
+| `JIRA_SPRINT_FIELD` | Custom field ID for sprint field (default: customfield_10017) |
 
 ### CI/CD Pipeline
 

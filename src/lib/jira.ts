@@ -68,7 +68,16 @@ class JiraClient {
   private maxRetries: number;
   private rateLimitDelay: number;
 
+  
   constructor(config: JiraConfig) {
+    logger.info("Jira Client initialized with configuration:", {
+      host: config.host,
+      email: config.email,
+      apiToken: "***",
+      maxRetries: config.maxRetries,
+      rateLimitDelay: config.rateLimitDelay,
+    });
+
     this.client = new Version3Client({
       host: config.host,
       authentication: {
@@ -224,11 +233,12 @@ class JiraClient {
   }
 }
 
+
 // Create a singleton instance
 const jiraClient = new JiraClient({
-  host: process.env.JIRA_HOST || "",
-  email: process.env.JIRA_EMAIL || "",
-  apiToken: process.env.JIRA_API_TOKEN || "",
+  host: process.env.JIRA_HOST as string,
+  email: process.env.JIRA_EMAIL as string,
+  apiToken: process.env.JIRA_API_TOKEN as string,
   maxRetries: 3,
   rateLimitDelay: 1000,
 });

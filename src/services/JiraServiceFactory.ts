@@ -14,6 +14,7 @@ import {
   JiraUser,
   GitLabMRWithJira,
 } from "@/types/Jira";
+import jiraClient from "@/lib/jira";
 
 /**
  * Interface for Jira service implementations
@@ -53,16 +54,58 @@ export interface JiraServiceConfig {
  * Default configuration
  */
 const defaultConfig: JiraServiceConfig = {
-  useMock: true, // Default to mock implementation for now
+  useMock: false, // Default to real implementation
 };
 
 /**
- * Create a real Jira service (to be implemented in the future)
+ * Create a real Jira service using the jiraClient
  */
 function createRealJiraService(config: JiraServiceConfig): JiraService {
-  // This will be implemented when we're ready to connect to real Jira
-  // For now, we'll just throw an error if someone tries to use it
-  throw new Error("Real Jira service not yet implemented");
+  return {
+    async getTickets(options?: JiraQueryOptions): Promise<JiraTicket[]> {
+      return jiraClient.searchTickets(options?.search || "");
+    },
+
+    async getTicket(key: string): Promise<JiraTicket | null> {
+      return jiraClient.getTicket(key);
+    },
+
+    async mapMRsToTickets(mrs: unknown[]): Promise<unknown[]> {
+      // This is a placeholder implementation
+      // The actual implementation should be handled by the MRService
+      return mrs;
+    },
+
+    async getMRsGroupedByTicket(mrs: unknown[]): Promise<JiraTicketWithMRs[]> {
+      // This is a placeholder implementation
+      // The actual implementation should be handled by the MRService
+      return [];
+    },
+
+    async getUsers(): Promise<JiraUser[]> {
+      // This is a placeholder implementation
+      // The actual implementation should be handled by the MRService
+      return [];
+    },
+
+    async getTicketsWithMRs(
+      options?: JiraQueryOptions
+    ): Promise<JiraTicketWithMRs[]> {
+      // This is a placeholder implementation
+      // The actual implementation should be handled by the MRService
+      return [];
+    },
+
+    async getMergeRequestsWithJira(options?: {
+      skipCache?: boolean;
+      projectId?: number;
+      authorId?: number;
+    }): Promise<GitLabMRWithJira[]> {
+      // This is a placeholder implementation
+      // The actual implementation should be handled by the MRService
+      return [];
+    },
+  };
 }
 
 /**

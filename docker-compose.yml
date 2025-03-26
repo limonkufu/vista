@@ -16,7 +16,14 @@ services:
       - NODE_ENV=development
       - GITLAB_API_TOKEN=${GITLAB_API_TOKEN}
       - GITLAB_USER_IDS=${GITLAB_USER_IDS}
-      # Add other environment variables as needed
+      # Jira API settings
+      - JIRA_HOST=${JIRA_HOST}
+      - JIRA_EMAIL=${JIRA_EMAIL}
+      - JIRA_API_TOKEN=${JIRA_API_TOKEN}
+      - JIRA_EPIC_LINK_FIELD=${JIRA_EPIC_LINK_FIELD:-customfield_10014}
+      - JIRA_EPIC_NAME_FIELD=${JIRA_EPIC_NAME_FIELD:-customfield_10015}
+      - JIRA_STORY_POINTS_FIELD=${JIRA_STORY_POINTS_FIELD:-customfield_10016}
+      - JIRA_SPRINT_FIELD=${JIRA_SPRINT_FIELD:-customfield_10017}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 10s
