@@ -1,4 +1,3 @@
-import JiraApi from "jira-client";
 import { logger } from "./logger";
 import {
   JiraTicket,
@@ -52,45 +51,9 @@ interface JiraIssue {
 }
 
 /**
- * Jira API configuration
- */
-interface JiraConfig {
-  host: string;
-  email: string;
-  apiToken: string;
-  maxRetries?: number;
-  rateLimitDelay?: number;
-}
-
-/**
  * Jira client for interacting with the Jira API
  */
 class JiraClient {
-  private client: JiraApi;
-  private maxRetries: number;
-  private rateLimitDelay: number;
-
-  constructor(config: JiraConfig) {
-    logger.info("Jira Client initialized with configuration:", {
-      host: config.host,
-      email: config.email,
-      apiToken: "***",
-      maxRetries: config.maxRetries,
-      rateLimitDelay: config.rateLimitDelay,
-    });
-
-    this.client = new JiraApi({
-      protocol: "https",
-      host: config.host,
-      username: config.email,
-      password: config.apiToken,
-      apiVersion: "3",
-      strictSSL: true,
-    });
-    this.maxRetries = config.maxRetries || 3;
-    this.rateLimitDelay = config.rateLimitDelay || 1000;
-  }
-
   /**
    * Map Jira API issue to our JiraTicket type
    */
@@ -154,15 +117,19 @@ class JiraClient {
    */
   async searchTickets(jql: string): Promise<JiraTicket[]> {
     try {
-      const response = await this.client.searchJira(jql, {
-        maxResults: 100,
-      });
+      const response = await fetch(
+        `/api/jira?action=searchTickets&jql=${encodeURIComponent(jql)}`
+      );
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
 
-      if (!response.issues) {
+      if (!data.issues) {
         return [];
       }
 
-      return response.issues.map((issue: JiraIssue) =>
+      return data.issues.map((issue: JiraIssue) =>
         this.mapJiraIssueToTicket(issue)
       );
     } catch (error) {
@@ -176,8 +143,14 @@ class JiraClient {
    */
   async getTicket(key: string): Promise<JiraTicket | null> {
     try {
-      const issue = await this.client.findIssue(key);
-      return this.mapJiraIssueToTicket(issue as unknown as JiraIssue);
+      const response = await fetch(
+        `/api/jira?action=getTicket&key=${encodeURIComponent(key)}`
+      );
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const issue = await response.json();
+      return this.mapJiraIssueToTicket(issue as JiraIssue);
     } catch (error) {
       logger.error(`Failed to get Jira ticket ${key}:`, error);
       return null;
@@ -214,12 +187,6 @@ class JiraClient {
 }
 
 // Create a singleton instance
-const jiraClient = new JiraClient({
-  host: process.env.JIRA_HOST as string,
-  email: process.env.JIRA_EMAIL as string,
-  apiToken: process.env.JIRA_API_TOKEN as string,
-  maxRetries: 3,
-  rateLimitDelay: 1000,
-});
+const jiraClient = new JiraClient();
 
 export default jiraClient;

@@ -1,4 +1,5 @@
 import { gitlabApiCache } from "./gitlabCache";
+import { jiraApiCache } from "./jiraCache";
 import { tooOldCache, notUpdatedCache, pendingReviewCache } from "./cache";
 import { clientCache } from "./clientCache";
 import { logger } from "./logger";
@@ -8,7 +9,7 @@ import { logger } from "./logger";
  */
 export const cacheManager = {
   /**
-   * Clear all caches (API response cache, GitLab API cache, and client cache)
+   * Clear all caches (API response cache, GitLab API cache, Jira API cache, and client cache)
    */
   clearAll: () => {
     // Clear API response caches
@@ -18,6 +19,9 @@ export const cacheManager = {
 
     // Clear GitLab API cache
     gitlabApiCache.clear();
+
+    // Clear Jira API cache
+    jiraApiCache.clear();
 
     // Clear client cache
     clientCache.clear();
@@ -31,6 +35,14 @@ export const cacheManager = {
   clearGitLabCache: () => {
     gitlabApiCache.clear();
     logger.info("GitLab API cache cleared", {}, "CacheManager");
+  },
+
+  /**
+   * Clear only the Jira API cache
+   */
+  clearJiraCache: () => {
+    jiraApiCache.clear();
+    logger.info("Jira API cache cleared", {}, "CacheManager");
   },
 
   /**
@@ -61,6 +73,7 @@ export const cacheManager = {
       notUpdatedCache: { size: "N/A" },
       pendingReviewCache: { size: "N/A" },
       gitlabApiCache: gitlabApiCache.getStats(),
+      jiraApiCache: jiraApiCache.getStats(),
       clientCache: { size: "N/A" },
     };
   },
