@@ -8,11 +8,13 @@ import {
 } from "../types/Jira";
 
 /**
- * Jira API response types
+ * Jira API response types - Expect 'browseUrl' from our API route
  */
-interface JiraIssue {
+interface JiraIssueFromApi {
+  // Renamed to avoid confusion with jira-client type
   id: string;
   key: string;
+  browseUrl?: string; // Expect this from our API route
   fields: {
     summary: string;
     description?:
@@ -56,41 +58,22 @@ interface JiraIssue {
  */
 class JiraClient {
   /**
-   * Map Jira API issue to our JiraTicket type
+   * Map Jira API issue (received from our /api/jira) to our JiraTicket type
    */
-  private mapJiraIssueToTicket(issue: JiraIssue): JiraTicket {
-    const jiraHost = process.env.JIRA_HOST; // Get host from env
-
-    // --- START: Corrected URL Construction & Logging ---
-    let ticketUrl = "";
-    if (jiraHost) {
-      // Ensure https:// prefix and remove trailing slash if present
-      const cleanedHost = jiraHost
-        .replace(/^https?:\/\//, "")
-        .replace(/\/$/, "");
-      ticketUrl = `https://${cleanedHost}/browse/${issue.key}`;
-    } else {
-      logger.error(
-        "JIRA_HOST environment variable is not set. Cannot construct correct Jira URL.",
+  private mapJiraIssueToTicket(issue: JiraIssueFromApi): JiraTicket {
+    // --- REMOVED URL Construction - Use issue.browseUrl instead ---
+    const ticketUrl = issue.browseUrl || ""; // Use the URL provided by the API route
+    if (!ticketUrl) {
+      logger.warn(
+        "Browse URL missing in API response for Jira issue",
         { key: issue.key },
         "JiraClient"
       );
-      // Fallback or leave empty? Leaving empty for now.
     }
-
-    // Log the construction process for debugging
-    logger.debug(
-      "Mapping Jira Issue to Ticket - URL Construction",
-      {
-        key: issue.key,
-        envHost: process.env.JIRA_HOST, // Log the raw env var value
-        constructedUrl: ticketUrl, // Log the final URL
-      },
-      "JiraClient"
-    );
-    // --- END: Corrected URL Construction & Logging ---
+    // --- End Removal ---
 
     // Get custom field IDs from environment variables or configuration
+    // These are still needed if the API route doesn't map them
     const epicLinkField =
       process.env.JIRA_EPIC_LINK_FIELD || "customfield_10014";
     const epicNameField =
@@ -112,7 +95,7 @@ class JiraClient {
       key: issue.key,
       title: issue.fields.summary,
       description,
-      url: ticketUrl, // Use the correctly constructed URL
+      url: ticketUrl, // Use the URL from the API response
       status: issue.fields.status.name as JiraTicketStatus,
       priority: issue.fields.priority.name as JiraTicketPriority,
       type: issue.fields.issuetype.name as JiraTicketType,
@@ -169,7 +152,8 @@ class JiraClient {
         return [];
       }
 
-      return data.issues.map((issue: JiraIssue) =>
+      // Map using the updated function which expects browseUrl
+      return data.issues.map((issue: JiraIssueFromApi) =>
         this.mapJiraIssueToTicket(issue)
       );
     } catch (error) {
@@ -207,7 +191,8 @@ class JiraClient {
         });
         return null;
       }
-      return this.mapJiraIssueToTicket(issue as JiraIssue);
+      // Map using the updated function which expects browseUrl
+      return this.mapJiraIssueToTicket(issue as JiraIssueFromApi);
     } catch (error) {
       logger.error(`Failed to get Jira ticket ${key}:`, { error });
       throw error; // Re-throw error for handling upstream

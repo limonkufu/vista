@@ -134,64 +134,83 @@ class MRJiraAssociationService {
   ): Promise<JiraTicket | null> {
     // Check run-time cache first
     if (this.config.enableCache && runTimeJiraTicketCache.has(key)) {
-      return runTimeJiraTicketCache.get(key) || null;
+      // Return cached result (could be null if previous fetch failed)
+      return runTimeJiraTicketCache.get(key) ?? null;
     }
 
     try {
       // Fetch using the JiraService (which uses /api/jira and its own cache)
       const ticket = await jiraService.getTicket(key);
 
-      // Store in run-time cache
+      // Store in run-time cache (store null if fetch returned null)
       if (this.config.enableCache) {
         runTimeJiraTicketCache.set(key, ticket);
       }
       return ticket;
     } catch (error) {
+      // Log the error specifically from this context
       logger.error(
         "Error fetching Jira ticket during enhancement",
-        { key, error },
+        { key, error: error instanceof Error ? error.message : String(error) },
         "MRJiraAssociationService"
       );
       // Cache the null result to avoid refetching a known failure during this run
       if (this.config.enableCache) {
         runTimeJiraTicketCache.set(key, null);
       }
+      // Do not re-throw here; let the enhancement process continue for other MRs
       return null;
     }
   }
 
   /**
-   * Enhance GitLab MRs with Jira ticket information.
+   * Enhance GitLab MRs with Jira ticket information sequentially.
    * @param mrs - The base list of GitLab MRs.
    * @returns A promise resolving to the list of MRs enhanced with Jira data.
    */
   async enhanceMRsWithJira(mrs: GitLabMR[]): Promise<GitLabMRWithJira[]> {
     // Clear the run-time cache at the start of each batch enhancement
     runTimeJiraTicketCache.clear();
-
-    const associationPromises = mrs.map(async (mr) => {
-      const jiraKey = this.getJiraKeyForMR(mr); // Considers manual override
-
-      if (!jiraKey) {
-        return { ...mr }; // Return original MR if no key found
-      }
-
-      // Fetch ticket data using the run-time cached fetcher
-      const jiraTicket = await this.fetchJiraTicketWithRunCache(jiraKey);
-
-      return {
-        ...mr,
-        jiraTicket: jiraTicket || undefined, // Ensure it's undefined if null
-        jiraTicketKey: jiraKey,
-      };
+    logger.info("Starting sequential enhancement of MRs with Jira data", {
+      count: mrs.length,
     });
 
-    const enhancedMRs = await Promise.all(associationPromises);
+    const enhancedMRs: GitLabMRWithJira[] = [];
+    let ticketsFetched = 0;
+    let ticketsFailed = 0;
 
-    logger.info("Enhanced MRs with Jira data", {
+    // Process MRs sequentially to avoid overwhelming the API
+    for (const mr of mrs) {
+      const jiraKey = this.getJiraKeyForMR(mr); // Considers manual override
+      let jiraTicket: JiraTicket | null = null;
+
+      if (jiraKey) {
+        // Fetch ticket data using the run-time cached fetcher
+        jiraTicket = await this.fetchJiraTicketWithRunCache(jiraKey);
+        if (jiraTicket) {
+          ticketsFetched++;
+        } else {
+          // Log failure if fetchJiraTicketWithRunCache returned null (error already logged inside)
+          ticketsFailed++;
+        }
+      }
+
+      enhancedMRs.push({
+        ...mr,
+        jiraTicket: jiraTicket || undefined, // Ensure it's undefined if null
+        jiraTicketKey: jiraKey || undefined, // Ensure it's undefined if null
+      });
+
+      // Optional: Add a small delay between fetches if still hitting limits
+      // await new Promise(resolve => setTimeout(resolve, 50)); // e.g., 50ms delay
+    }
+
+    logger.info("Finished enhancing MRs with Jira data", {
       totalMRs: mrs.length,
       mrsWithJiraKey: enhancedMRs.filter((mr) => mr.jiraTicketKey).length,
       mrsWithFullTicket: enhancedMRs.filter((mr) => mr.jiraTicket).length,
+      ticketsFetchedSuccessfully: ticketsFetched,
+      ticketsFetchFailed: ticketsFailed,
     });
 
     // Clear run-time cache after processing is complete

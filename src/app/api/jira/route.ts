@@ -6,7 +6,7 @@ import { jiraApiCache } from "@/lib/jiraCache";
 import Bottleneck from "bottleneck"; // Import bottleneck
 
 // --- Environment Variable Logging ---
-const jiraHost = process.env.JIRA_HOST as string;
+const jiraHost = process.env.JIRA_HOST as string; // Keep reading server-side
 const jiraEmail = process.env.JIRA_EMAIL as string;
 const jiraTokenExists = !!process.env.JIRA_API_TOKEN; // Check existence, don't log token
 
@@ -50,10 +50,6 @@ const jira = new JiraApi({
 const jiraLimiter = new Bottleneck({
   maxConcurrent: 5, // Max 5 requests running at the same time
   minTime: 100, // Minimum 100ms between requests (limits to 10 requests/sec)
-  // Optional: Add reservoir for bursting
-  // reservoir: 15,
-  // reservoirRefreshAmount: 15,
-  // reservoirRefreshInterval: 1000, // Replenish 15 requests every second
 });
 
 // Optional: Log limiter events for debugging
@@ -64,12 +60,16 @@ jiraLimiter.on("error", (error) => {
 jiraLimiter.on("failed", (error, jobInfo) => {
   logger.warn(
     "Bottleneck job failed after retries",
-    { error: error.message, retryCount: jobInfo.retryCount },
+    {
+      error: error.message,
+      retryCount: jobInfo.retryCount,
+      // Log original args if possible and safe (avoid logging sensitive data)
+      // originalArgs: jobInfo.args
+    },
     "JiraAPI:Limiter"
   );
-  // Decide how to handle failures. Returning null allows the main logic to throw.
-  // Returning a specific error object might also be an option.
-  return null; // Indicate failure
+  // Returning null signals failure to the caller of schedule()
+  return null;
 });
 
 jiraLimiter.on("depleted", (empty) => {
@@ -82,6 +82,31 @@ jiraLimiter.on("debug", (message, data) => {
   logger.debug(`Bottleneck: ${message}`, data, "JiraAPI:Limiter:Debug");
 });
 // --- End Limiter Setup ---
+
+// --- Helper Function to Add Browse URL ---
+const addBrowseUrlToIssue = (issue: any): any => {
+  if (!issue || !issue.key) return issue;
+
+  let browseUrl = "";
+  if (jiraHost) {
+    const cleanedHost = jiraHost.replace(/^https?:\/\//, "").replace(/\/$/, "");
+    browseUrl = `https://${cleanedHost}/browse/${issue.key}`;
+    logger.debug(
+      "Constructed browseUrl in API route",
+      { key: issue.key, browseUrl },
+      "JiraAPI:addBrowseUrl"
+    );
+  } else {
+    logger.error(
+      "JIRA_HOST missing in API route, cannot construct browseUrl",
+      { key: issue.key },
+      "JiraAPI:addBrowseUrl"
+    );
+  }
+  // Add the constructed URL to the issue object
+  return { ...issue, browseUrl };
+};
+// --- End Helper Function ---
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -122,7 +147,8 @@ export async function GET(request: Request) {
               { key, cacheKey: ticketCacheKey },
               "JiraAPI"
             );
-            return NextResponse.json(cachedTicket);
+            // Add browseUrl even to cached data before returning
+            return NextResponse.json(addBrowseUrlToIssue(cachedTicket));
           }
         }
 
@@ -133,28 +159,32 @@ export async function GET(request: Request) {
           () => jiraLimiter.schedule(() => jira.findIssue(key)) // Use limiter.schedule
         );
 
-        // Handle potential null from limiter failure if configured in 'failed' event
+        // Handle potential null from limiter failure
         if (ticket === null) {
           logger.error(
             `Rate limited or job failed fetching ticket ${key} after retries.`,
             { key },
             "JiraAPI"
           );
-          // Return a 503 Service Unavailable or 429 Too Many Requests
           return NextResponse.json(
             {
               error:
                 "Failed to fetch ticket due to rate limits or internal error.",
             },
-            { status: 503 }
+            // Use 429 or 503 depending on which is more appropriate
+            // 429 if it's definitely rate limit, 503 if it could be other failures
+            { status: 429 }
           );
         }
 
+        // Add browseUrl before caching and returning
+        const ticketWithUrl = addBrowseUrlToIssue(ticket);
+
         if (!skipCache) {
-          jiraApiCache.set(ticketCacheKey, ticket);
+          jiraApiCache.set(ticketCacheKey, ticketWithUrl); // Cache the enriched ticket
         }
         logger.info("Successfully fetched Jira ticket", { key }, "JiraAPI");
-        return NextResponse.json(ticket);
+        return NextResponse.json(ticketWithUrl); // Return enriched ticket
 
       case "searchTickets":
         if (!jql) {
@@ -181,7 +211,13 @@ export async function GET(request: Request) {
               { jql: jql.substring(0, 50) + "...", cacheKey: searchCacheKey },
               "JiraAPI"
             );
-            return NextResponse.json(cachedSearch);
+            // Add browseUrl to cached search results before returning
+            const cachedResultWithUrls = {
+              ...(cachedSearch as any), // Cast to add issues property if needed
+              issues:
+                (cachedSearch as any)?.issues?.map(addBrowseUrlToIssue) ?? [],
+            };
+            return NextResponse.json(cachedResultWithUrls);
           }
         }
 
@@ -197,7 +233,6 @@ export async function GET(request: Request) {
             jiraLimiter.schedule(() =>
               // Use limiter.schedule
               jira.searchJira(jql, {
-                // Ensure jql is not null here
                 maxResults: 100,
                 // Add fields if needed: fields: ['summary', 'status', ...]
               })
@@ -216,23 +251,29 @@ export async function GET(request: Request) {
               error:
                 "Failed to search Jira due to rate limits or internal error.",
             },
-            { status: 503 }
+            { status: 429 } // Use 429 for rate limit / failure
           );
         }
 
+        // Add browseUrl to each issue in the search results
+        const resultWithUrls = {
+          ...searchResult,
+          issues: searchResult.issues?.map(addBrowseUrlToIssue) ?? [],
+        };
+
         if (!skipCache) {
-          jiraApiCache.set(searchCacheKey, searchResult);
+          jiraApiCache.set(searchCacheKey, resultWithUrls); // Cache the enriched results
         }
         logger.info(
           "Successfully searched Jira tickets",
           {
             jql: jql.substring(0, 50) + "...",
             totalResults:
-              searchResult.total || searchResult.issues?.length || 0,
+              resultWithUrls.total || resultWithUrls.issues?.length || 0,
           },
           "JiraAPI"
         );
-        return NextResponse.json(searchResult);
+        return NextResponse.json(resultWithUrls); // Return enriched results
 
       default:
         logger.warn(
@@ -244,15 +285,18 @@ export async function GET(request: Request) {
     }
   } catch (error: any) {
     // Log more details from the error if possible
+    // Check if the error object itself indicates a 429 status
+    const status =
+      error?.status || error?.response?.status || error?.statusCode || 500;
     const errorDetails = {
       message: error.message,
-      status: error.response?.status, // Axios-like error structure
-      data: error.response?.data, // Axios-like error structure
+      status: status,
+      // Attempt to get more specific Jira error messages
+      jiraError: error.errorMessages || error.errors || error?.response?.data,
       stack: error.stack?.substring(0, 300) + "...", // Truncate stack
-      jiraClientError: error.errorMessages || error.errors, // Check for jira-client specific error format
     };
     logger.error(
-      "Jira API error",
+      "Jira API error in main catch block",
       {
         action,
         key,
@@ -262,9 +306,15 @@ export async function GET(request: Request) {
       "JiraAPI"
     );
 
-    // Check if it's specifically a rate limit error (often 429)
-    const status = error.response?.status || error.statusCode || 500;
+    // *** Improved 429 Check ***
+    // Check status code from various possible error structures
     if (status === 429) {
+      logger.warn(
+        // Log as warning since it's an expected limit
+        `Jira API rate limit hit (429)`,
+        { action, key, jql: jql ? jql.substring(0, 50) + "..." : null },
+        "JiraAPI"
+      );
       return NextResponse.json(
         {
           error: "Rate limit exceeded when contacting Jira API.",
@@ -281,7 +331,7 @@ export async function GET(request: Request) {
         details: error.message || String(error),
         statusCode: status,
       },
-      { status: status }
+      { status: status } // Return the actual status if available, otherwise 500
     );
   }
 }
