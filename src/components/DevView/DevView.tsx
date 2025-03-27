@@ -1,5 +1,5 @@
 // File: src/components/DevView/DevView.tsx
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react"; // Added useCallback
 import { GitLabMRWithJira } from "@/types/Jira";
 import { MRStatusCategory, StatusGroup } from "./StatusGroup";
 import { Button } from "@/components/ui/button";
@@ -11,10 +11,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { RefreshCw, Search, Filter } from "lucide-react";
+import { RefreshCw, Search, Filter, Loader2 } from "lucide-react"; // Added Loader2
 import { Skeleton } from "@/components/ui/skeleton";
 import { logger } from "@/lib/logger";
 import { useDevViewData } from "@/hooks/useUnifiedMRData"; // Import the specialized hook
+import { useGitLabUsers } from "@/hooks/useGitLabUsers"; // Import useGitLabUsers
 
 // Mock categorization of MRs - in reality this would use more complex logic
 // Keep this function or refine it based on actual MR data properties
@@ -53,6 +54,14 @@ function categorizeMRs(
   return categorized;
 }
 
+// Skeleton for loading state
+const StatusGroupSkeleton = () => (
+  <div className="mb-4 space-y-2">
+    <Skeleton className="h-16 w-full rounded-md" data-testid="skeleton-card" />
+    <Skeleton className="h-4 w-3/4 rounded-md" />
+  </div>
+);
+
 type DevViewProps = Record<string, never>;
 
 export function DevView({}: DevViewProps) {
@@ -61,10 +70,13 @@ export function DevView({}: DevViewProps) {
   const [authorFilter, setAuthorFilter] = useState<string>("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
 
+  // Get team loading state
+  const { isLoadingTeam } = useGitLabUsers();
+
   // Use the specialized hook to fetch data
   const {
     data: mergeRequestsData, // Renamed to avoid conflict
-    isLoading,
+    isLoading: isLoadingData, // Rename to avoid conflict
     isError,
     error: fetchError,
     refetch,
@@ -76,6 +88,9 @@ export function DevView({}: DevViewProps) {
     }
     // Add refreshInterval if needed
   );
+
+  // Combine loading states
+  const isLoading = isLoadingData || isLoadingTeam;
 
   // Apply client-side filtering on top of the data fetched by the hook
   const filteredMergeRequests = useMemo(() => {
@@ -110,24 +125,26 @@ export function DevView({}: DevViewProps) {
   const error = isError ? fetchError?.message || "Unknown error" : null;
 
   // Handle refresh - call the refetch function from the hook
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     logger.info("Refreshing Dev view data", {}, "DevView");
-    refetch(); // Triggers data fetching in useDevViewData
-  };
+    refetch({ skipCache: true }); // Trigger data fetching in useDevViewData
+  }, [refetch]);
 
   // Extract unique authors and projects from the *original* data for dropdowns
   const authors = useMemo(
-    () => [
-      ...new Set((mergeRequestsData || []).map((mr) => mr.author.username)),
-    ],
+    () =>
+      [
+        ...new Set((mergeRequestsData || []).map((mr) => mr.author.username)),
+      ].sort(), // Sort authors alphabetically
     [mergeRequestsData]
   );
   const projects = useMemo(
-    () => [
-      ...new Set(
-        (mergeRequestsData || []).map((mr) => mr.project_id.toString())
-      ),
-    ],
+    () =>
+      [
+        ...new Set(
+          (mergeRequestsData || []).map((mr) => mr.project_id.toString())
+        ),
+      ].sort((a, b) => parseInt(a) - parseInt(b)), // Sort projects numerically
     [mergeRequestsData]
   );
 
@@ -145,69 +162,91 @@ export function DevView({}: DevViewProps) {
         </Button>
       </div>
 
-      {/* Filter UI remains similar */}
-      <div className="flex gap-4 items-center">
-        <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Search MRs by title, branch, or ticket..."
-            className="pl-8"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      {/* Filter UI - Render conditionally based on team loading state */}
+      {!isLoadingTeam ? (
+        <div className="flex flex-wrap gap-4 items-center">
+          {" "}
+          {/* Added flex-wrap */}
+          <div className="relative flex-grow min-w-[200px]">
+            {" "}
+            {/* Use flex-grow */}
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search MRs by title, branch, or ticket..."
+              className="pl-8 w-full" // Ensure input takes full width
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              disabled={isLoading} // Disable while data is loading
+            />
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {" "}
+            {/* Added flex-wrap */}
+            <Select
+              value={authorFilter}
+              onValueChange={setAuthorFilter}
+              disabled={isLoading}
+            >
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="Author" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Authors</SelectItem>
+                {authors.map((author) => (
+                  <SelectItem key={`author-${author}`} value={author}>
+                    {author}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={projectFilter}
+              onValueChange={setProjectFilter}
+              disabled={isLoading}
+            >
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="Project" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Projects</SelectItem>
+                {projects.map((project) => (
+                  <SelectItem key={`project-${project}`} value={project}>
+                    Project #{project} {/* Or fetch project names */}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="ghost"
+              size="icon"
+              title="More Filters"
+              disabled={isLoading}
+            >
+              <Filter className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
-
-        <div className="flex gap-2">
-          <Select value={authorFilter} onValueChange={setAuthorFilter}>
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="Author" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Authors</SelectItem>
-              {authors.map((author) => (
-                <SelectItem key={`author-${author}`} value={author}>
-                  {author}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={projectFilter} onValueChange={setProjectFilter}>
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="Project" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Projects</SelectItem>
-              {projects.map((project) => (
-                <SelectItem key={`project-${project}`} value={project}>
-                  Project #{project}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Button variant="ghost" size="icon">
-            <Filter className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="rounded-md bg-destructive/15 p-4 text-destructive">
-          {error}
+      ) : (
+        // Show simplified loading state while team is loading
+        <div className="flex items-center justify-center p-4 text-muted-foreground">
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          Loading team configuration...
         </div>
       )}
+
+      {error &&
+        !isLoading && ( // Only show error if not loading
+          <div className="rounded-md bg-destructive/15 p-4 text-destructive">
+            {error}
+          </div>
+        )}
 
       <div className="space-y-4">
         {isLoading ? (
           // Skeleton loading state
           Array.from({ length: 3 }).map((_, index) => (
-            <div key={index} className="space-y-2">
-              <Skeleton className="h-12 w-full rounded-md" />
-              <Skeleton className="h-4 w-3/4 rounded-md" />
-              <Skeleton className="h-4 w-1/2 rounded-md" />
-            </div>
+            <StatusGroupSkeleton key={index} />
           ))
         ) : // Use categorizedMRs derived from filteredMergeRequests
         Object.entries(categorizedMRs).length > 0 &&
@@ -224,6 +263,7 @@ export function DevView({}: DevViewProps) {
             />
           ))
         ) : (
+          // Only show "No MRs" if not loading and processed list is empty
           <div className="text-center py-8 text-muted-foreground">
             <p>No merge requests found matching your criteria.</p>
             <Button

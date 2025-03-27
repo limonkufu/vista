@@ -19,10 +19,11 @@ import {
   JiraTicketType,
   JiraQueryOptions,
 } from "@/types/Jira";
-import { RefreshCw, Search, Filter, ArrowUpDown } from "lucide-react"; // Import ArrowUpDown
+import { RefreshCw, Search, Filter, ArrowUpDown, Loader2 } from "lucide-react"; // Import ArrowUpDown, Loader2
 import { Skeleton } from "@/components/ui/skeleton";
 import { logger } from "@/lib/logger";
 import { usePOViewData } from "@/hooks/useUnifiedMRData"; // Import the specialized hook
+import { useGitLabUsers } from "@/hooks/useGitLabUsers"; // Import useGitLabUsers
 
 interface POViewProps {
   className?: string;
@@ -30,6 +31,14 @@ interface POViewProps {
 
 type SortField = "key" | "title" | "status" | "openMRs" | "stalledMRs";
 type SortDirection = "asc" | "desc";
+
+// Skeleton component for loading state
+const TicketGroupSkeleton = () => (
+  <div className="mb-4 space-y-2">
+    <Skeleton className="h-16 w-full rounded-md" data-testid="skeleton-card" />
+    <Skeleton className="h-4 w-3/4 rounded-md" />
+  </div>
+);
 
 export function POView({ className }: POViewProps) {
   // --- State ---
@@ -51,6 +60,8 @@ export function POView({ className }: POViewProps) {
   const [showFlagged, setShowFlagged] = useState(false);
 
   // --- Data Fetching ---
+  const { isLoadingTeam } = useGitLabUsers(); // Get team loading state
+
   const jiraOptions: JiraQueryOptions = useMemo(
     () => ({
       // Only pass filters that the backend/service can handle efficiently
@@ -66,7 +77,7 @@ export function POView({ className }: POViewProps) {
 
   const {
     data: ticketsData,
-    isLoading,
+    isLoading: isLoadingData, // Rename to avoid conflict
     isError,
     error: fetchError,
     refetch,
@@ -74,6 +85,9 @@ export function POView({ className }: POViewProps) {
     jiraOptions
     // Add refreshInterval if needed
   );
+
+  // Combine loading states
+  const isLoading = isLoadingData || isLoadingTeam;
 
   // --- Memos and Callbacks ---
   const tickets = useMemo(() => ticketsData || [], [ticketsData]);
@@ -143,37 +157,10 @@ export function POView({ className }: POViewProps) {
 
   // --- Filtering & Sorting Logic ---
   const processedTickets = useMemo(() => {
+    // Start with tickets from the hook (already potentially filtered by backend)
     let processed = [...tickets];
 
-    // Apply client-side filtering (robust approach)
-    // Search term (if not fully handled by backend)
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase();
-      processed = processed.filter(
-        (t) =>
-          t.ticket.key.toLowerCase().includes(searchLower) ||
-          t.ticket.title.toLowerCase().includes(searchLower) ||
-          t.mrs.some((mr) => mr.title.toLowerCase().includes(searchLower))
-      );
-    }
-    // Status, Priority, Type (if not handled by backend or for robustness)
-    if (filters.statuses && filters.statuses.length > 0) {
-      processed = processed.filter((t) =>
-        filters.statuses?.includes(t.ticket.status)
-      );
-    }
-    if (filters.priorities && filters.priorities.length > 0) {
-      processed = processed.filter((t) =>
-        filters.priorities?.includes(t.ticket.priority)
-      );
-    }
-    if (filters.types && filters.types.length > 0) {
-      processed = processed.filter((t) =>
-        filters.types?.includes(t.ticket.type)
-      );
-    }
-
-    // Filter by reviewed/flagged status
+    // Apply client-side filtering for reviewed/flagged status
     if (showReviewed) {
       processed = processed.filter((t) => reviewedTicketKeys.has(t.ticket.key));
     }
@@ -208,9 +195,7 @@ export function POView({ className }: POViewProps) {
 
     return processed;
   }, [
-    tickets,
-    searchTerm,
-    filters,
+    tickets, // Use tickets directly from hook
     sortField,
     sortDirection,
     showReviewed,
@@ -232,140 +217,149 @@ export function POView({ className }: POViewProps) {
         </Button>
       </div>
 
-      {/* Filter UI */}
-      <div className="flex flex-wrap gap-4 items-center">
-        {" "}
-        {/* Added flex-wrap */}
-        <div className="relative flex-grow min-w-[200px]">
-          {" "}
-          {/* Use flex-grow */}
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Search tickets (key, title) or MRs..."
-            className="pl-8 w-full" // Ensure input takes full width
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-        {/* Dropdown Filters */}
-        <div className="flex gap-2 flex-wrap">
-          {" "}
-          {/* Added flex-wrap */}
-          <Select
-            value={filters.statuses?.[0] || "all"}
-            onValueChange={(value) => handleFilterChange("statuses", value)}
-          >
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              {Object.values(JiraTicketStatus).map((status) => (
-                <SelectItem key={status} value={status}>
-                  {status}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={filters.priorities?.[0] || "all"}
-            onValueChange={(value) => handleFilterChange("priorities", value)}
-          >
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Priority" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Priorities</SelectItem>
-              {Object.values(JiraTicketPriority).map((priority) => (
-                <SelectItem key={priority} value={priority}>
-                  {priority}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={filters.types?.[0] || "all"}
-            onValueChange={(value) => handleFilterChange("types", value)}
-          >
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Types</SelectItem>
-              {Object.values(JiraTicketType).map((type) => (
-                <SelectItem key={type} value={type}>
-                  {type}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {/* Sort By Dropdown */}
-          <Select
-            value={sortField}
-            onValueChange={(v) => handleSort(v as SortField)}
-          >
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Sort By" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="key">Sort: Key</SelectItem>
-              <SelectItem value="title">Sort: Title</SelectItem>
-              <SelectItem value="status">Sort: Status</SelectItem>
-              <SelectItem value="openMRs">Sort: Open MRs</SelectItem>
-              <SelectItem value="stalledMRs">Sort: Stalled MRs</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() =>
-              setSortDirection(sortDirection === "asc" ? "desc" : "asc")
-            }
-            title={`Sort Direction (${sortDirection})`}
-          >
-            <ArrowUpDown className="h-4 w-4" />
-          </Button>
-          {/* Reviewed/Flagged Toggles */}
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="show-reviewed"
-              checked={showReviewed}
-              onCheckedChange={setShowReviewed}
+      {/* Filter UI - Render conditionally based on team loading state */}
+      {!isLoadingTeam ? (
+        <div className="flex flex-wrap gap-4 items-center">
+          <div className="relative flex-grow min-w-[200px]">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search tickets (key, title) or MRs..."
+              className="pl-8 w-full"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              disabled={isLoading} // Disable while data is loading
             />
-            <Label htmlFor="show-reviewed">Reviewed</Label>
           </div>
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="show-flagged"
-              checked={showFlagged}
-              onCheckedChange={setShowFlagged}
-            />
-            <Label htmlFor="show-flagged">Flagged</Label>
+          <div className="flex gap-2 flex-wrap">
+            <Select
+              value={filters.statuses?.[0] || "all"}
+              onValueChange={(value) => handleFilterChange("statuses", value)}
+              disabled={isLoading}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                {Object.values(JiraTicketStatus).map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {status}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={filters.priorities?.[0] || "all"}
+              onValueChange={(value) => handleFilterChange("priorities", value)}
+              disabled={isLoading}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Priority" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Priorities</SelectItem>
+                {Object.values(JiraTicketPriority).map((priority) => (
+                  <SelectItem key={priority} value={priority}>
+                    {priority}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={filters.types?.[0] || "all"}
+              onValueChange={(value) => handleFilterChange("types", value)}
+              disabled={isLoading}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                {Object.values(JiraTicketType).map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {type}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={sortField}
+              onValueChange={(v) => handleSort(v as SortField)}
+              disabled={isLoading}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Sort By" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="key">Sort: Key</SelectItem>
+                <SelectItem value="title">Sort: Title</SelectItem>
+                <SelectItem value="status">Sort: Status</SelectItem>
+                <SelectItem value="openMRs">Sort: Open MRs</SelectItem>
+                <SelectItem value="stalledMRs">Sort: Stalled MRs</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() =>
+                setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+              }
+              title={`Sort Direction (${sortDirection})`}
+              disabled={isLoading}
+            >
+              <ArrowUpDown className="h-4 w-4" />
+            </Button>
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="show-reviewed"
+                checked={showReviewed}
+                onCheckedChange={setShowReviewed}
+                disabled={isLoading}
+              />
+              <Label htmlFor="show-reviewed">Reviewed</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="show-flagged"
+                checked={showFlagged}
+                onCheckedChange={setShowFlagged}
+                disabled={isLoading}
+              />
+              <Label htmlFor="show-flagged">Flagged</Label>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              title="More Filters"
+              disabled={isLoading}
+            >
+              <Filter className="h-4 w-4" />
+            </Button>
           </div>
-          <Button variant="ghost" size="icon" title="More Filters">
-            <Filter className="h-4 w-4" />
-          </Button>
         </div>
-      </div>
-
-      {/* Error Display */}
-      {error && (
-        <div className="rounded-md bg-destructive/15 p-4 text-destructive">
-          {error}
+      ) : (
+        // Show simplified loading state while team is loading
+        <div className="flex items-center justify-center p-4 text-muted-foreground">
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          Loading team configuration...
         </div>
       )}
 
-      {/* Ticket Groups */}
+      {/* Error Display */}
+      {error &&
+        !isLoading && ( // Only show error if not loading
+          <div className="rounded-md bg-destructive/15 p-4 text-destructive">
+            {error}
+          </div>
+        )}
+
+      {/* Ticket Groups - Render conditionally based on combined loading state */}
       <div className="space-y-4">
         {isLoading ? (
           // Skeleton loading state
           Array.from({ length: 5 }).map((_, index) => (
-            <div key={index} className="space-y-2">
-              <Skeleton className="h-12 w-full rounded-md" />
-              <Skeleton className="h-4 w-3/4 rounded-md" />
-              <Skeleton className="h-4 w-1/2 rounded-md" />
-            </div>
+            <TicketGroupSkeleton key={index} />
           ))
         ) : processedTickets.length > 0 ? (
           processedTickets.map((ticketWithMRs) => (
@@ -380,6 +374,7 @@ export function POView({ className }: POViewProps) {
             />
           ))
         ) : (
+          // Only show "No tickets" if not loading and processedTickets is empty
           <div className="text-center py-8 text-muted-foreground">
             <p>No Jira tickets found matching your criteria.</p>
             <Button

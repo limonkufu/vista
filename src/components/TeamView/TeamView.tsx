@@ -1,5 +1,5 @@
 // File: src/components/TeamView/TeamView.tsx
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react"; // Added useCallback
 import {
   JiraTicketWithMRs,
   GitLabMRWithJira,
@@ -17,13 +17,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { RefreshCw, Search, Filter } from "lucide-react";
+import { RefreshCw, Search, Filter, Loader2 } from "lucide-react"; // Added Loader2
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { logger } from "@/lib/logger";
 import { useTeamViewData, useDevViewData } from "@/hooks/useUnifiedMRData"; // Import specialized hooks
+import { useGitLabUsers } from "@/hooks/useGitLabUsers"; // Import useGitLabUsers
+import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
 
 type TeamViewProps = Record<string, never>;
 type TeamViewTab = "overview" | "tickets";
+
+// Skeleton for loading state
+const TeamViewSkeleton = () => (
+  <div className="space-y-6">
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <Skeleton key={i} className="h-28 w-full" />
+      ))}
+    </div>
+    <Skeleton className="h-10 w-1/3" />
+    <Skeleton className="h-64 w-full" />
+  </div>
+);
 
 export function TeamView({}: TeamViewProps) {
   // Local state for filters and tabs
@@ -32,6 +47,8 @@ export function TeamView({}: TeamViewProps) {
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
   // --- Data Fetching using Hooks ---
+  const { isLoadingTeam } = useGitLabUsers(); // Get team loading state
+
   const jiraOptions: JiraQueryOptions = useMemo(
     () => ({
       search: searchTerm,
@@ -51,9 +68,6 @@ export function TeamView({}: TeamViewProps) {
   } = useTeamViewData(jiraOptions);
 
   // Fetch all MRs with Jira (needed for some overview metrics like total MRs)
-  // Note: This might be slightly redundant if useTeamViewData already fetches all MRs internally.
-  // If useTeamViewData provides *all* MRs used to build the ticket groups, this second fetch might be unnecessary.
-  // Assuming for now we need both datasets separately structured.
   const {
     data: mergeRequestsData,
     isLoading: isLoadingMRs,
@@ -62,8 +76,8 @@ export function TeamView({}: TeamViewProps) {
     refetch: refetchMRs,
   } = useDevViewData(); // useDevViewData fetches GitLabMRWithJira
 
-  // Combine loading and error states
-  const isLoading = isLoadingTickets || isLoadingMRs;
+  // Combine loading states
+  const isLoading = isLoadingTickets || isLoadingMRs || isLoadingTeam;
   const isError = isErrorTickets || isErrorMRs;
   const error = isError
     ? errorTickets?.message || errorMRs?.message || "Failed to load team data"
@@ -77,11 +91,11 @@ export function TeamView({}: TeamViewProps) {
   );
 
   // Handle refresh - refetch both datasets
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     logger.info("Refreshing Team view data", {}, "TeamView");
-    refetchTickets();
-    refetchMRs();
-  };
+    refetchTickets({ skipCache: true });
+    refetchMRs({ skipCache: true });
+  }, [refetchTickets, refetchMRs]);
 
   // No need for useEffect to load data, hooks handle it.
 
@@ -111,61 +125,86 @@ export function TeamView({}: TeamViewProps) {
         </TabsList>
       </Tabs>
 
-      {/* Filter UI */}
-      <div className="flex gap-4 items-center">
-        <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder={
-              activeTab === "overview"
-                ? "Search tickets or MRs..." // Search might need client-side filtering for overview
-                : "Search tickets..." // Search handled by hook options for tickets tab
-            }
-            className="pl-8"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-
-        {/* Status filter only applies when the 'tickets' tab is active */}
-        {activeTab === "tickets" && (
-          <div className="flex gap-2">
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                {Object.values(JiraTicketStatus).map((status) => (
-                  <SelectItem key={status} value={status}>
-                    {status}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Button variant="ghost" size="icon">
-              <Filter className="h-4 w-4" />
-            </Button>
+      {/* Filter UI - Render conditionally based on team loading state */}
+      {!isLoadingTeam ? (
+        <div className="flex flex-wrap gap-4 items-center">
+          {" "}
+          {/* Added flex-wrap */}
+          <div className="relative flex-grow min-w-[200px]">
+            {" "}
+            {/* Use flex-grow */}
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder={
+                activeTab === "overview"
+                  ? "Search tickets or MRs..." // Search might need client-side filtering for overview
+                  : "Search tickets..." // Search handled by hook options for tickets tab
+              }
+              className="pl-8 w-full" // Ensure input takes full width
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              disabled={isLoading} // Disable while data is loading
+            />
           </div>
-        )}
-      </div>
-
-      {error && (
-        <div className="rounded-md bg-destructive/15 p-4 text-destructive">
-          {error}
+          {/* Status filter only applies when the 'tickets' tab is active */}
+          {activeTab === "tickets" && (
+            <div className="flex gap-2 flex-wrap">
+              {" "}
+              {/* Added flex-wrap */}
+              <Select
+                value={statusFilter}
+                onValueChange={setStatusFilter}
+                disabled={isLoading}
+              >
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  {Object.values(JiraTicketStatus).map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="ghost"
+                size="icon"
+                title="More Filters"
+                disabled={isLoading}
+              >
+                <Filter className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </div>
+      ) : (
+        // Show simplified loading state while team is loading
+        <div className="flex items-center justify-center p-4 text-muted-foreground">
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          Loading team configuration...
         </div>
       )}
 
+      {error &&
+        !isLoading && ( // Only show error if not loading
+          <div className="rounded-md bg-destructive/15 p-4 text-destructive">
+            {error}
+          </div>
+        )}
+
       {/* Render content based on active tab */}
-      {activeTab === "overview" ? (
+      {isLoading ? (
+        <TeamViewSkeleton />
+      ) : activeTab === "overview" ? (
         <div className="space-y-8">
           <MetricsDashboard
             // Pass the potentially *unfiltered* tickets and *all* MRs for accurate overview metrics
             tickets={ticketsData || []} // Or adjust if hook provides unfiltered base
             mergeRequests={mergeRequests}
-            isLoading={isLoading}
+            isLoading={isLoading} // Pass combined loading state
           />
           <div>
             <h2 className="text-xl font-semibold mb-4">
@@ -179,7 +218,7 @@ export function TeamView({}: TeamViewProps) {
                   (t.overdueMRs || 0) > 0 ||
                   (t.stalledMRs || 0) > 0
               )}
-              isLoading={isLoading}
+              isLoading={isLoading} // Pass combined loading state
             />
           </div>
         </div>

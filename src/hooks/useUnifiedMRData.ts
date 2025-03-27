@@ -49,6 +49,11 @@ function isGitLabMRsResponse(data: any): data is GitLabMRsResponse {
   return data && "items" in data && "metadata" in data;
 }
 
+// Helper to check if a data type requires team IDs
+const dataTypeRequiresTeamIds = (dataType: MRDataType): boolean => {
+  return dataType !== MRDataType.JIRA_TICKETS; // Only JIRA_TICKETS doesn't strictly need team IDs
+};
+
 /**
  * React hook for fetching and managing MR data using the UnifiedDataService
  */
@@ -64,6 +69,7 @@ export function useUnifiedMRData<T>(
   } = props;
 
   const [data, setData] = useState<T | null>(null);
+  // Start loading only if not skipping initial fetch
   const [isLoading, setIsLoading] = useState(!skipInitialFetch);
   const [isError, setIsError] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -71,41 +77,71 @@ export function useUnifiedMRData<T>(
     undefined
   );
 
-  // Get current team users and their IDs
-  const { teamUsers } = useGitLabUsers();
+  // Get current team users and their IDs AND loading state
+  const { teamUsers, isLoadingTeam } = useGitLabUsers(); // Get isLoadingTeam
   const currentTeamIds = useMemo(() => teamUsers.map((u) => u.id), [teamUsers]);
 
   // Function to fetch data based on the requested data type
   const fetchData = useCallback(
     async (options: { skipCache?: boolean } = {}) => {
       const { skipCache = false } = options;
-      // Ensure we have team IDs before fetching data that requires them
-      // For JIRA_TICKETS, team IDs might not be needed directly
-      if (dataType !== MRDataType.JIRA_TICKETS && currentTeamIds.length === 0) {
-        logger.warn(`Skipping fetch for ${dataType}: No team IDs available.`);
-        // Optionally set loading to false and data to empty/null
-        setIsLoading(false);
-        setData(dataType === MRDataType.JIRA_WITH_MRS ? [] : (null as any)); // Set appropriate empty state
+      const requiresTeam = dataTypeRequiresTeamIds(dataType);
+
+      // --- Start Guard Conditions ---
+      // 1. If it requires team IDs but the team is still loading, wait.
+      if (requiresTeam && isLoadingTeam) {
+        logger.debug(`Skipping fetch for ${dataType}: Team is loading.`);
+        // Ensure loading state reflects waiting for team
+        if (!isLoading) setIsLoading(true); // Keep loading true while waiting for team
         return;
       }
+      // 2. If it requires team IDs but the loaded team is empty, skip and warn.
+      if (requiresTeam && !isLoadingTeam && currentTeamIds.length === 0) {
+        logger.warn(`Skipping fetch for ${dataType}: No team IDs available.`);
+        // Set appropriate empty/error state
+        setIsLoading(false);
+        setData(
+          dataType === MRDataType.JIRA_WITH_MRS ||
+            dataType === MRDataType.MRS_WITH_JIRA
+            ? []
+            : (null as any)
+        ); // Set appropriate empty state
+        setIsError(false); // Not necessarily an error, just no team
+        setError(
+          new Error(
+            "No team members selected or found. Please configure the team."
+          )
+        ); // Provide informative error
+        return;
+      }
+      // --- End Guard Conditions ---
 
       try {
+        // Set loading true only if we are actually going to fetch
         setIsLoading(true);
         setIsError(false);
         setError(null);
 
         let result: any;
         // Combine options, adding currentTeamIds to gitlabOptions
+        // Ensure teamUserIds is only added if required and available
         const fetchOpts = {
           ...gitlabOptions,
           skipCache,
-          teamUserIds: currentTeamIds, // Pass current team IDs
+          ...(requiresTeam && { teamUserIds: currentTeamIds }), // Pass current team IDs only if needed
         };
         const jiraFetchOpts = { ...jiraOptions, skipCache };
 
         logger.debug(
           `Fetching data via useUnifiedMRData`,
-          { dataType, fetchOpts, jiraFetchOpts },
+          {
+            dataType,
+            fetchOpts: {
+              ...fetchOpts,
+              teamUserIds: `(${currentTeamIds.length} ids)`,
+            },
+            jiraFetchOpts,
+          }, // Log count instead of full array
           "useUnifiedMRData"
         );
 
@@ -120,7 +156,6 @@ export function useUnifiedMRData<T>(
             result = await unifiedDataService.fetchPendingReviewMRs(fetchOpts);
             break;
           case MRDataType.MRS_WITH_JIRA:
-            // Pass fetchOpts which includes teamUserIds
             result = await unifiedDataService.getMRsWithJiraTickets(fetchOpts);
             break;
           case MRDataType.JIRA_TICKETS:
@@ -128,12 +163,11 @@ export function useUnifiedMRData<T>(
             result = await unifiedDataService.fetchJiraTickets(jiraFetchOpts);
             break;
           case MRDataType.JIRA_WITH_MRS:
-            // Pass fetchOpts (containing teamUserIds) as gitlabOptions
             result = await unifiedDataService.getJiraTicketsWithMRs({
               gitlabOptions: fetchOpts, // Pass combined options
               jiraOptions: jiraFetchOpts,
               skipCache,
-              teamUserIds: currentTeamIds, // Also pass explicitly if needed by top-level function
+              teamUserIds: currentTeamIds, // Pass explicitly
             });
             break;
           default:
@@ -150,12 +184,13 @@ export function useUnifiedMRData<T>(
           setLastRefreshed(new Date().toISOString());
         }
 
+        // Set loading false *after* successful fetch and state update
         setIsLoading(false);
       } catch (err) {
         const errorObj = err instanceof Error ? err : new Error(String(err));
         setIsError(true);
         setError(errorObj);
-        setIsLoading(false);
+        setIsLoading(false); // Also set loading false on error
         logger.error(
           `Error fetching ${dataType}`,
           { error: errorObj.message, stack: errorObj.stack },
@@ -163,17 +198,58 @@ export function useUnifiedMRData<T>(
         );
       }
     },
-    // Add currentTeamIds to dependencies
-    [dataType, gitlabOptions, jiraOptions, currentTeamIds]
+    // *** REMOVED isLoading from dependencies ***
+    [dataType, gitlabOptions, jiraOptions, currentTeamIds, isLoadingTeam]
   );
 
-  // Initial data fetch & refetch when team changes
+  // Initial data fetch: Trigger only when team is loaded (if required)
   useEffect(() => {
     if (!skipInitialFetch) {
-      fetchData(); // Fetch uses cache by default
+      // Check if team is needed and if it's loaded
+      if (dataTypeRequiresTeamIds(dataType)) {
+        if (!isLoadingTeam && currentTeamIds.length > 0) {
+          fetchData(); // Fetch only if team is loaded and not empty
+        } else if (!isLoadingTeam && currentTeamIds.length === 0) {
+          // Handle case where team loaded but is empty
+          logger.warn(
+            `Initial fetch skipped for ${dataType}: Team loaded but is empty.`
+          );
+          setIsLoading(false);
+          setData(
+            dataType === MRDataType.JIRA_WITH_MRS ||
+              dataType === MRDataType.MRS_WITH_JIRA
+              ? []
+              : (null as any)
+          );
+          setError(
+            new Error(
+              "No team members selected or found. Please configure the team."
+            )
+          );
+        }
+        // If isLoadingTeam is true, fetchData will be triggered by the effect below when it becomes false
+      } else {
+        fetchData(); // Fetch immediately if team IDs are not required
+      }
     }
-    // Refetch when currentTeamIds changes
-  }, [skipInitialFetch, fetchData, currentTeamIds]); // Add currentTeamIds dependency
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skipInitialFetch, dataType, isLoadingTeam, currentTeamIds]); // Run when loading state or team IDs change
+
+  // Refetch when team changes (if team is required)
+  useEffect(() => {
+    if (
+      dataTypeRequiresTeamIds(dataType) &&
+      !isLoadingTeam &&
+      currentTeamIds.length > 0
+    ) {
+      // Optional: Decide if you *always* want to refetch when team changes,
+      // or only if data hasn't been fetched yet.
+      // For simplicity, let's refetch to ensure data matches the new team.
+      logger.debug(`Team changed for ${dataType}, refetching...`);
+      fetchData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTeamIds, isLoadingTeam, dataType]); // Removed fetchData dependency here as it caused loops
 
   // Set up periodic refresh if requested
   useEffect(() => {
@@ -194,15 +270,20 @@ export function useUnifiedMRData<T>(
   // Define the refetch function to be returned by the hook
   const refetch = useCallback(
     async (options: { skipCache?: boolean } = {}) => {
-      await fetchData(options); // Pass skipCache option to fetchData
+      // Ensure fetchData is called with the latest dependencies
+      await fetchData(options);
     },
-    [fetchData]
+    [fetchData] // fetchData already includes necessary dependencies
   );
+
+  // Determine combined loading state: true if hook is loading OR if team is loading (for team-dependent types)
+  const combinedIsLoading =
+    isLoading || (isLoadingTeam && dataType !== MRDataType.JIRA_TICKETS);
 
   // Create the response object
   const response: UnifiedDataResponse<T> = {
     data: data as T, // Cast data which might be null initially
-    isLoading,
+    isLoading: combinedIsLoading, // Use combined loading state
     isError,
     error,
     lastRefreshed,
@@ -213,13 +294,17 @@ export function useUnifiedMRData<T>(
 }
 
 // --- Specialized Hooks ---
-// These hooks now implicitly pass teamUserIds via the base hook
+// Memoize options passed to the base hook
 
 export function usePOViewData(
-  jiraOptions?: JiraQueryOptions,
-  gitlabOptions?: Omit<FetchAllTeamMRsOptions, "groupId" | "teamUserIds">, // Remove teamUserIds from explicit options here
+  jiraOptionsProp?: JiraQueryOptions,
+  gitlabOptionsProp?: Omit<FetchAllTeamMRsOptions, "groupId" | "teamUserIds">, // Remove teamUserIds from explicit options here
   refreshInterval?: number
 ): UnifiedDataResponse<JiraTicketWithMRs[]> {
+  // Memoize options to prevent unnecessary refetches if props haven't changed
+  const gitlabOptions = useMemo(() => gitlabOptionsProp, [gitlabOptionsProp]);
+  const jiraOptions = useMemo(() => jiraOptionsProp, [jiraOptionsProp]);
+
   return useUnifiedMRData<JiraTicketWithMRs[]>({
     dataType: MRDataType.JIRA_WITH_MRS,
     gitlabOptions, // Pass remaining gitlab options
@@ -229,9 +314,11 @@ export function usePOViewData(
 }
 
 export function useDevViewData(
-  gitlabOptions?: Omit<FetchAllTeamMRsOptions, "groupId" | "teamUserIds">, // Remove teamUserIds
+  gitlabOptionsProp?: Omit<FetchAllTeamMRsOptions, "groupId" | "teamUserIds">, // Remove teamUserIds
   refreshInterval?: number
 ): UnifiedDataResponse<GitLabMRWithJira[]> {
+  const gitlabOptions = useMemo(() => gitlabOptionsProp, [gitlabOptionsProp]);
+
   return useUnifiedMRData<GitLabMRWithJira[]>({
     dataType: MRDataType.MRS_WITH_JIRA,
     gitlabOptions,
@@ -240,12 +327,15 @@ export function useDevViewData(
 }
 
 export function useTeamViewData(
-  jiraOptions?: JiraQueryOptions,
-  gitlabOptions?: Omit<FetchAllTeamMRsOptions, "groupId" | "teamUserIds">, // Remove teamUserIds
+  jiraOptionsProp?: JiraQueryOptions,
+  gitlabOptionsProp?: Omit<FetchAllTeamMRsOptions, "groupId" | "teamUserIds">, // Remove teamUserIds
   refreshInterval?: number
 ): UnifiedDataResponse<JiraTicketWithMRs[]> {
+  const gitlabOptions = useMemo(() => gitlabOptionsProp, [gitlabOptionsProp]);
+  const jiraOptions = useMemo(() => jiraOptionsProp, [jiraOptionsProp]);
+
   return useUnifiedMRData<JiraTicketWithMRs[]>({
-    dataType: MRDataType.JIRA_WITH_MRS,
+    dataType: MRDataType.JIRA_WITH_MRS, // Or potentially MRS_WITH_JIRA depending on primary need
     gitlabOptions,
     jiraOptions,
     refreshInterval,
@@ -260,13 +350,18 @@ export function useHygieneViewData(
     | MRDataType.TOO_OLD
     | MRDataType.NOT_UPDATED
     | MRDataType.PENDING_REVIEW,
-  gitlabOptions?: Omit<FetchAllTeamMRsOptions, "groupId" | "teamUserIds"> & {
+  gitlabOptionsProp?: Omit<
+    FetchAllTeamMRsOptions,
+    "groupId" | "teamUserIds"
+  > & {
     // Remove teamUserIds
     page?: number;
     per_page?: number;
   },
   refreshInterval?: number
 ): UnifiedDataResponse<GitLabMRsResponse> {
+  const gitlabOptions = useMemo(() => gitlabOptionsProp, [gitlabOptionsProp]);
+
   return useUnifiedMRData<GitLabMRsResponse>({
     dataType,
     gitlabOptions,
