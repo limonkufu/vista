@@ -24,6 +24,8 @@ import { useTeamViewData, useDevViewData } from "@/hooks/useUnifiedMRData"; // I
 import { useGitLabUsers } from "@/hooks/useGitLabUsers"; // Import useGitLabUsers
 import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
 
+import { cn } from "@/lib/utils";
+
 type TeamViewProps = Record<string, never>;
 type TeamViewTab = "overview" | "tickets";
 
@@ -103,7 +105,7 @@ export function TeamView({}: TeamViewProps) {
   const filteredTickets = tickets; // The hook should return data respecting the options
 
   return (
-    <div className="space-y-6">
+    <div className={cn("container py-8 space-y-6")}>
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Team View</h1>
         <Button onClick={handleRefresh} variant="outline" disabled={isLoading}>

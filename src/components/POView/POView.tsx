@@ -25,6 +25,8 @@ import { logger } from "@/lib/logger";
 import { usePOViewData } from "@/hooks/useUnifiedMRData"; // Import the specialized hook
 import { useGitLabUsers } from "@/hooks/useGitLabUsers"; // Import useGitLabUsers
 
+import { cn } from "@/lib/utils";
+
 interface POViewProps {
   className?: string;
 }
@@ -205,7 +207,7 @@ export function POView({ className }: POViewProps) {
   ]);
 
   return (
-    <div className={`space-y-6 ${className || ""}`}>
+    <div className={cn("container py-8 space-y-6", className)}>
       {/* Header */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Product Owner View</h1>
@@ -216,7 +218,6 @@ export function POView({ className }: POViewProps) {
           Refresh
         </Button>
       </div>
-
       {/* Filter UI - Render conditionally based on team loading state */}
       {!isLoadingTeam ? (
         <div className="flex flex-wrap gap-4 items-center">
@@ -345,7 +346,6 @@ export function POView({ className }: POViewProps) {
           Loading team configuration...
         </div>
       )}
-
       {/* Error Display */}
       {error &&
         !isLoading && ( // Only show error if not loading
@@ -353,7 +353,6 @@ export function POView({ className }: POViewProps) {
             {error}
           </div>
         )}
-
       {/* Ticket Groups - Render conditionally based on combined loading state */}
       <div className="space-y-4">
         {isLoading ? (

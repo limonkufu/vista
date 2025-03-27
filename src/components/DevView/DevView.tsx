@@ -17,6 +17,8 @@ import { logger } from "@/lib/logger";
 import { useDevViewData } from "@/hooks/useUnifiedMRData"; // Import the specialized hook
 import { useGitLabUsers } from "@/hooks/useGitLabUsers"; // Import useGitLabUsers
 
+import { cn } from "@/lib/utils";
+
 // Mock categorization of MRs - in reality this would use more complex logic
 // Keep this function or refine it based on actual MR data properties
 function categorizeMRs(
@@ -151,7 +153,7 @@ export function DevView({}: DevViewProps) {
   // No need for useEffect to load data, the hook handles it.
 
   return (
-    <div className="space-y-6">
+    <div className={cn("container py-8 space-y-6")}>
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Developer View</h1>
         <Button onClick={handleRefresh} variant="outline" disabled={isLoading}>
