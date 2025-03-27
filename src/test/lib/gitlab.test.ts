@@ -1,203 +1,410 @@
-import axios from 'axios';
-
-// Mock axios before importing the module
-jest.mock('axios');
-const mockedAxios = axios as jest.Mocked<typeof axios>;
-
-// Save and mock environment variables
-const originalEnv = { ...process.env };
-process.env.GITLAB_API_TOKEN = 'mock-api-token';
-process.env.GITLAB_USER_IDS = '123:456:789';
-
-// Import the module after environment setup
-import { 
-  fetchTeamMRs,
+// File: src/test/lib/gitlab.test.ts
+import axios from "axios";
+import {
+  fetchUsersByGroupName,
+  searchUsersByNameOrUsername,
+  fetchUsersByIds,
+  getDefaultTeamUsers,
+  getTeamUserIds,
   isTeamMember,
   isTeamRelevantMR,
+  fetchAllTeamMRs,
   GitLabUser,
-  GitLabMR 
-} from '../../lib/gitlab';
+  GitLabMR,
+} from "@/lib/gitlab"; // Adjust path as needed
+import { gitlabApiCache } from "@/lib/gitlabCache"; // Import cache
 
-describe('GitLab API Utility', () => {
-  afterEach(() => {
+// Mock axios
+jest.mock("axios");
+const mockedAxios = axios as jest.Mocked<typeof axios>;
+
+// Mock logger
+jest.mock("@/lib/logger", () => ({
+  logger: {
+    debug: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  },
+  measurePerformance: jest.fn((name, fn) => fn()),
+}));
+
+// --- Mock Data ---
+const mockTeamUser1: GitLabUser = {
+  id: 1,
+  name: "Team User One",
+  username: "team_user_1",
+  state: "active",
+};
+const mockTeamUser2: GitLabUser = {
+  id: 2,
+  name: "Team User Two",
+  username: "team_user_2",
+  state: "active",
+};
+const mockNonTeamUser: GitLabUser = {
+  id: 99,
+  name: "Non Team User",
+  username: "non_team_user",
+  state: "active",
+};
+const mockTeamUsers = [mockTeamUser1, mockTeamUser2];
+
+const mockMR1: Partial<GitLabMR> = {
+  id: 101,
+  title: "MR by Team Member",
+  author: mockTeamUser1,
+  assignees: [mockNonTeamUser],
+  reviewers: [],
+};
+const mockMR2: Partial<GitLabMR> = {
+  id: 102,
+  title: "MR assigned to Team Member",
+  author: mockNonTeamUser,
+  assignees: [mockTeamUser2],
+  reviewers: [],
+};
+const mockMR3: Partial<GitLabMR> = {
+  id: 103,
+  title: "MR reviewed by Team Member",
+  author: mockNonTeamUser,
+  assignees: [],
+  reviewers: [mockTeamUser1],
+};
+const mockMR4: Partial<GitLabMR> = {
+  id: 104,
+  title: "MR not relevant to team",
+  author: mockNonTeamUser,
+  assignees: [mockNonTeamUser],
+  reviewers: [mockNonTeamUser],
+};
+
+describe("GitLab API Utility", () => {
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeAll(() => {
+    originalEnv = { ...process.env }; // Store original env
+  });
+
+  beforeEach(() => {
     jest.clearAllMocks();
-  });
-  
-  afterAll(() => {
-    // Restore original environment
-    process.env = { ...originalEnv };
+    gitlabApiCache.clear(); // Clear cache before each test
+    // Set default env vars for tests
+    process.env.GITLAB_API_TOKEN = "mock-api-token";
+    process.env.GITLAB_USER_IDS = "1:2"; // Default team for tests
+    process.env.GITLAB_GROUP_ID = "mock-group-id";
   });
 
-  describe('isTeamMember', () => {
-    test('identifies team members correctly', () => {
-      // Team member (ID in env variable)
-      const teamMember: GitLabUser = { id: 123, name: 'Team Member', username: 'team_member' };
-      expect(isTeamMember(teamMember)).toBe(true);
-      
-      // Non-team member
-      const nonTeamMember: GitLabUser = { id: 999, name: 'Non Team Member', username: 'non_team_member' };
-      expect(isTeamMember(nonTeamMember)).toBe(false);
-      
-      // Edge cases
-      expect(isTeamMember(undefined as unknown as GitLabUser)).toBe(false);
-      expect(isTeamMember({} as GitLabUser)).toBe(false);
+  afterAll(() => {
+    process.env = originalEnv; // Restore original env
+  });
+
+  // --- Helper Function Tests ---
+  describe("getTeamUserIds", () => {
+    it("should parse valid IDs from environment variable", () => {
+      process.env.GITLAB_USER_IDS = "1:2:3:invalid:4";
+      expect(getTeamUserIds()).toEqual([1, 2, 3, 4]);
+    });
+
+    it("should return empty array if env var is missing or empty", () => {
+      delete process.env.GITLAB_USER_IDS;
+      expect(getTeamUserIds()).toEqual([]);
+      process.env.GITLAB_USER_IDS = "";
+      expect(getTeamUserIds()).toEqual([]);
     });
   });
-  
-  describe('isTeamRelevantMR', () => {
-    test('identifies MRs relevant to the team', () => {
-      const teamMember: GitLabUser = { id: 123, name: 'Team Member', username: 'team_member' };
-      const nonTeamMember: GitLabUser = { id: 999, name: 'Non Team Member', username: 'non_team_member' };
-      
-      // Author is team member
-      expect(isTeamRelevantMR({ 
-        author: teamMember, 
-        assignees: [], 
-        reviewers: []
-      } as GitLabMR)).toBe(true);
-      
-      // Assignee is team member
-      expect(isTeamRelevantMR({ 
-        author: nonTeamMember, 
-        assignees: [teamMember], 
-        reviewers: []
-      } as GitLabMR)).toBe(true);
-      
-      // Reviewer is team member
-      expect(isTeamRelevantMR({ 
-        author: nonTeamMember, 
-        assignees: [], 
-        reviewers: [teamMember]
-      } as GitLabMR)).toBe(true);
-      
-      // No team members involved
-      expect(isTeamRelevantMR({ 
-        author: nonTeamMember, 
-        assignees: [nonTeamMember], 
-        reviewers: [nonTeamMember]
-      } as GitLabMR)).toBe(false);
-      
-      // Edge cases
-      expect(isTeamRelevantMR(undefined as unknown as GitLabMR)).toBe(false);
+
+  describe("isTeamMember", () => {
+    it("should return true if user is in the team list", () => {
+      expect(isTeamMember(mockTeamUser1, mockTeamUsers)).toBe(true);
+    });
+
+    it("should return false if user is not in the team list", () => {
+      expect(isTeamMember(mockNonTeamUser, mockTeamUsers)).toBe(false);
+    });
+
+    it("should return false for invalid input", () => {
+      expect(isTeamMember(null as any, mockTeamUsers)).toBe(false);
+      expect(isTeamMember(mockTeamUser1, null as any)).toBe(false);
+      expect(isTeamMember(mockTeamUser1, [])).toBe(false);
     });
   });
-  
-  describe('fetchTeamMRs', () => {
-    test('fetches and filters MRs correctly', async () => {
-      // Mock data
-      const teamMember = { id: 123, name: 'Team Member', username: 'team_member' };
-      const nonTeamMember = { id: 999, name: 'Non Team Member', username: 'non_team_member' };
-      
-      const mockMRs = [
-        { id: 1, author: teamMember, assignees: [], reviewers: [] },
-        { id: 2, author: nonTeamMember, assignees: [teamMember], reviewers: [] },
-        { id: 3, author: nonTeamMember, assignees: [], reviewers: [teamMember] },
-        { id: 4, author: nonTeamMember, assignees: [nonTeamMember], reviewers: [nonTeamMember] }
+
+  describe("isTeamRelevantMR", () => {
+    it("should return true if author is a team member", () => {
+      expect(isTeamRelevantMR(mockMR1 as GitLabMR, mockTeamUsers)).toBe(true);
+    });
+
+    it("should return true if an assignee is a team member", () => {
+      expect(isTeamRelevantMR(mockMR2 as GitLabMR, mockTeamUsers)).toBe(true);
+    });
+
+    it("should return true if a reviewer is a team member", () => {
+      expect(isTeamRelevantMR(mockMR3 as GitLabMR, mockTeamUsers)).toBe(true);
+    });
+
+    it("should return false if no team members are involved", () => {
+      expect(isTeamRelevantMR(mockMR4 as GitLabMR, mockTeamUsers)).toBe(false);
+    });
+
+    it("should return false for invalid input", () => {
+      expect(isTeamRelevantMR(null as any, mockTeamUsers)).toBe(false);
+      expect(isTeamRelevantMR(mockMR1 as GitLabMR, null as any)).toBe(false);
+    });
+  });
+
+  // --- API Function Tests ---
+
+  describe("fetchUsersByGroupName", () => {
+    it("should fetch users for a valid group name", async () => {
+      const mockGroup = { id: 123, name: "target-group", path: "target-group" };
+      const mockMembers = [
+        { id: 1, name: "User A", username: "user_a", state: "active" },
+        { id: 2, name: "User B", username: "user_b", state: "blocked" }, // Should be filtered out
       ];
-      
-      // Mock API response
-      mockedAxios.get.mockResolvedValueOnce({
-        data: mockMRs,
-        headers: {
-          'x-total': '4',
-          'x-total-pages': '1',
-          'x-next-page': '',
-          'x-prev-page': ''
-        }
-      });
-      
-      const result = await fetchTeamMRs({ groupId: '12345' });
-      
-      // Check axios was called with correct parameters
-      expect(mockedAxios.get).toHaveBeenCalledWith(
-        'https://gitlab.com/api/v4/groups/12345/merge_requests',
-        expect.objectContaining({
-          headers: { 'PRIVATE-TOKEN': 'mock-api-token' },
-          params: expect.objectContaining({
-            page: 1,
-            per_page: 100
-          })
-        })
-      );
-      
-      // Should filter out item with ID 4 (no team members)
-      expect(result.items.length).toBe(3);
-      expect(result.items.map(mr => mr.id)).toEqual([1, 2, 3]);
-    });
-    
-    test('handles pagination correctly', async () => {
-      // Mock API response for page 2
-      mockedAxios.get.mockResolvedValueOnce({
-        data: [{ id: 5, author: { id: 123 }, assignees: [], reviewers: [] }],
-        headers: {
-          'x-total': '10',
-          'x-total-pages': '2',
-          'x-next-page': '',
-          'x-prev-page': '1'
-        }
-      });
-      
-      const result = await fetchTeamMRs({ 
-        groupId: '12345',
-        page: 2,
-        per_page: 5
-      });
-      
-      // Check correct page was requested
-      expect(mockedAxios.get).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          params: expect.objectContaining({
-            page: 2,
-            per_page: 5
-          })
-        })
-      );
-      
-      // Check pagination metadata
-      expect(result.metadata).toEqual({
-        totalItems: 10,
-        totalPages: 2,
-        currentPage: 2,
-        perPage: 5,
-        nextPage: undefined,
-        prevPage: 1
-      });
-    });
-    
-    test('retries on server errors', async () => {
-      // First call fails with 500, second succeeds
       mockedAxios.get
-        .mockRejectedValueOnce({ 
-          response: { status: 500 } 
+        .mockResolvedValueOnce({ data: [mockGroup] }) // Subgroup search
+        .mockResolvedValueOnce({ data: mockMembers }); // Member fetch
+
+      const users = await fetchUsersByGroupName("target-group");
+
+      expect(users).toHaveLength(1);
+      expect(users[0].username).toBe("user_a");
+      expect(mockedAxios.get).toHaveBeenCalledTimes(2);
+      expect(mockedAxios.get).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/groups/ska-telescope%2Fska-dev/subgroups"),
+        expect.objectContaining({ params: { search: "target-group" } })
+      );
+      expect(mockedAxios.get).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining(`/groups/${mockGroup.id}/members`),
+        expect.any(Object)
+      );
+    });
+
+    it("should return empty array if group not found", async () => {
+      mockedAxios.get.mockResolvedValueOnce({ data: [] }); // Subgroup search returns empty
+
+      const users = await fetchUsersByGroupName("nonexistent-group");
+
+      expect(users).toEqual([]);
+      expect(mockedAxios.get).toHaveBeenCalledTimes(1); // Only subgroup search called
+    });
+
+    // Add tests for caching (check if axios is called only once on second call)
+    it("should use cache on subsequent calls", async () => {
+      const mockGroup = { id: 123, name: "target-group", path: "target-group" };
+      const mockMembers = [
+        { id: 1, name: "User A", username: "user_a", state: "active" },
+      ];
+      mockedAxios.get
+        .mockResolvedValueOnce({ data: [mockGroup] })
+        .mockResolvedValueOnce({ data: mockMembers });
+
+      await fetchUsersByGroupName("target-group"); // First call
+      expect(mockedAxios.get).toHaveBeenCalledTimes(2);
+
+      mockedAxios.get.mockClear(); // Reset mock call count
+
+      const users = await fetchUsersByGroupName("target-group"); // Second call
+      expect(users).toHaveLength(1);
+      expect(mockedAxios.get).not.toHaveBeenCalled(); // Should hit cache
+    });
+
+    it("should skip cache when skipCache is true", async () => {
+      const mockGroup = { id: 123, name: "target-group", path: "target-group" };
+      const mockMembers = [
+        { id: 1, name: "User A", username: "user_a", state: "active" },
+      ];
+      mockedAxios.get
+        .mockResolvedValue({ data: [mockGroup] }) // Mock subgroup search for both calls
+        .mockResolvedValue({ data: mockMembers }); // Mock member fetch for both calls
+
+      await fetchUsersByGroupName("target-group", undefined, false); // Call 1 (caches)
+      expect(mockedAxios.get).toHaveBeenCalledTimes(2);
+
+      mockedAxios.get.mockClear();
+
+      await fetchUsersByGroupName("target-group", undefined, true); // Call 2 (skip cache)
+      expect(mockedAxios.get).toHaveBeenCalledTimes(2); // Should fetch again
+    });
+  });
+
+  describe("searchUsersByNameOrUsername", () => {
+    it("should search for active users", async () => {
+      const mockSearchResults = [
+        { id: 1, name: "Test User", username: "test_user", state: "active" },
+        { id: 2, name: "Blocked User", username: "blocked", state: "blocked" },
+      ];
+      mockedAxios.get.mockResolvedValueOnce({ data: mockSearchResults });
+
+      const users = await searchUsersByNameOrUsername("test");
+
+      expect(users).toHaveLength(1);
+      expect(users[0].username).toBe("test_user");
+      expect(mockedAxios.get).toHaveBeenCalledWith(
+        expect.stringContaining("/users"),
+        expect.objectContaining({
+          params: expect.objectContaining({ search: "test" }),
         })
+      );
+    });
+    // Add cache tests similar to fetchUsersByGroupName
+  });
+
+  describe("fetchUsersByIds", () => {
+    it("should fetch multiple active users by their IDs", async () => {
+      mockedAxios.get
+        .mockResolvedValueOnce({ data: mockTeamUser1 })
+        .mockResolvedValueOnce({ data: mockTeamUser2 })
         .mockResolvedValueOnce({
-          data: [{ id: 1, author: { id: 123 }, assignees: [], reviewers: [] }],
-          headers: {
-            'x-total': '1',
-            'x-total-pages': '1',
-            'x-next-page': '',
-            'x-prev-page': ''
-          }
+          data: { ...mockNonTeamUser, state: "blocked" },
+        }); // Mock one blocked user
+
+      const users = await fetchUsersByIds([1, 2, 99]);
+
+      expect(users).toHaveLength(2);
+      expect(users.map((u) => u.id)).toEqual([1, 2]);
+      expect(mockedAxios.get).toHaveBeenCalledTimes(3);
+      expect(mockedAxios.get).toHaveBeenCalledWith(
+        expect.stringContaining("/users/1"),
+        expect.any(Object)
+      );
+      expect(mockedAxios.get).toHaveBeenCalledWith(
+        expect.stringContaining("/users/2"),
+        expect.any(Object)
+      );
+      expect(mockedAxios.get).toHaveBeenCalledWith(
+        expect.stringContaining("/users/99"),
+        expect.any(Object)
+      );
+    });
+    // Add cache tests
+  });
+
+  describe("getDefaultTeamUsers", () => {
+    it("should fetch users based on GITLAB_USER_IDS", async () => {
+      process.env.GITLAB_USER_IDS = "1:2";
+      mockedAxios.get
+        .mockResolvedValueOnce({ data: mockTeamUser1 })
+        .mockResolvedValueOnce({ data: mockTeamUser2 });
+
+      const users = await getDefaultTeamUsers();
+
+      expect(users).toHaveLength(2);
+      expect(users.map((u) => u.id)).toEqual([1, 2]);
+      expect(mockedAxios.get).toHaveBeenCalledTimes(2); // Called fetchUsersByIds internally
+    });
+
+    it("should return empty array if GITLAB_USER_IDS is not set", async () => {
+      delete process.env.GITLAB_USER_IDS;
+      const users = await getDefaultTeamUsers();
+      expect(users).toEqual([]);
+      expect(mockedAxios.get).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("fetchAllTeamMRs", () => {
+    // Mock team users for filtering
+    const teamUsersForFetch = [
+      { id: 1, name: "User 1", username: "user1", state: "active" },
+      { id: 2, name: "User 2", username: "user2", state: "active" },
+    ];
+
+    const mockMRPage1 = [
+      { id: 1, title: "MR 1", author: { id: 1 }, assignees: [], reviewers: [] }, // Relevant
+      {
+        id: 2,
+        title: "MR 2",
+        author: { id: 99 },
+        assignees: [{ id: 2 }],
+        reviewers: [],
+      }, // Relevant
+    ];
+    const mockMRPage2 = [
+      {
+        id: 3,
+        title: "MR 3",
+        author: { id: 99 },
+        assignees: [],
+        reviewers: [{ id: 1 }],
+      }, // Relevant
+      {
+        id: 4,
+        title: "MR 4",
+        author: { id: 99 },
+        assignees: [{ id: 99 }],
+        reviewers: [],
+      }, // Not relevant
+    ];
+
+    it("should fetch all pages and filter relevant MRs", async () => {
+      // Mock page 1 response
+      mockedAxios.get.mockResolvedValueOnce({
+        data: mockMRPage1,
+        headers: { "x-total-pages": "2", "x-next-page": "2" },
+      });
+      // Mock page 2 response
+      mockedAxios.get.mockResolvedValueOnce({
+        data: mockMRPage2,
+        headers: { "x-total-pages": "2", "x-next-page": "" },
+      });
+
+      const result = await fetchAllTeamMRs(
+        { groupId: "mock-group-id" },
+        teamUsersForFetch
+      );
+
+      expect(result.items).toHaveLength(3); // MRs 1, 2, 3 are relevant
+      expect(result.items.map((mr) => mr.id)).toEqual([1, 2, 3]);
+      expect(result.totalItems).toBe(3);
+      expect(mockedAxios.get).toHaveBeenCalledTimes(2);
+      // Check params for page 1
+      expect(mockedAxios.get).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/groups/mock-group-id/merge_requests"),
+        expect.objectContaining({
+          params: expect.objectContaining({ page: 1, per_page: 100 }),
+        })
+      );
+      // Check params for page 2
+      expect(mockedAxios.get).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining("/groups/mock-group-id/merge_requests"),
+        expect.objectContaining({
+          params: expect.objectContaining({ page: 2, per_page: 100 }),
+        })
+      );
+    });
+
+    it("should handle retries on API errors", async () => {
+      // Mock failure then success
+      mockedAxios.get
+        .mockRejectedValueOnce({ response: { status: 500 } }) // Fail page 1 once
+        .mockResolvedValueOnce({
+          // Success page 1
+          data: mockMRPage1,
+          headers: { "x-total-pages": "1", "x-next-page": "" },
         });
-      
-      // Don't actually wait for timeouts in the test
-      jest.spyOn(global, 'setTimeout').mockImplementation((cb: any) => {
+
+      // Mock setTimeout for immediate retry
+      jest.spyOn(global, "setTimeout").mockImplementation((cb: any) => {
         cb();
         return {} as any;
       });
-      
-      const result = await fetchTeamMRs({ 
-        groupId: '12345',
-        maxRetries: 1
-      });
-      
-      // Should have been called twice
-      expect(mockedAxios.get).toHaveBeenCalledTimes(2);
-      expect(result.items.length).toBe(1);
-      
-      // Restore setTimeout
-      (global.setTimeout as jest.Mock).mockRestore();
+
+      const result = await fetchAllTeamMRs(
+        { groupId: "mock-group-id", maxRetries: 1 },
+        teamUsersForFetch
+      );
+
+      expect(result.items).toHaveLength(2); // Both MRs from page 1 are relevant
+      expect(mockedAxios.get).toHaveBeenCalledTimes(2); // Called twice due to retry
+
+      (global.setTimeout as jest.Mock).mockRestore(); // Restore setTimeout
     });
+
+    // Add cache tests for fetchAllTeamMRs (raw data cache and filtered cache)
   });
-}); 
+});
