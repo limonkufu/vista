@@ -1,7 +1,9 @@
+// File: src/middleware.ts
 import { NextResponse, NextRequest } from "next/server";
 import { RateLimiter } from "limiter";
-import { cookies } from "next/headers";
-import { FeatureFlag } from "./services/FeatureFlags";
+// Removed cookie and FeatureFlag imports as they are no longer needed here
+// import { cookies } from "next/headers";
+// import { FeatureFlag } from "./services/FeatureFlags";
 
 // Store rate limiters for each client
 const limiters = new Map<string, RateLimiter>();
@@ -12,68 +14,13 @@ const RATE_LIMIT = {
   interval: 60 * 1000, // per minute
 };
 
-// Feature flag check for server components
-const isFeatureEnabled = async (flagName: string): Promise<boolean> => {
-  try {
-    if (typeof window !== "undefined") {
-      // Client-side not handled here - use FeatureFlags service instead
-      return false;
-    }
-
-    // Get feature flags from cookies
-    const cookieStore = await cookies();
-    const featureFlagsCookie = cookieStore.get(
-      "gitlab-mrs-dashboard-feature-flags"
-    );
-
-    if (featureFlagsCookie && featureFlagsCookie.value) {
-      const flags = JSON.parse(featureFlagsCookie.value);
-      return flags[flagName] === true;
-    }
-  } catch (error) {
-    console.error("Error checking feature flag in middleware:", error);
-  }
-
-  return false;
-};
+// Removed the server-side isFeatureEnabled function
 
 export async function middleware(request: NextRequest) {
-  // Check role-based view access for new routes
-  if (request.nextUrl.pathname.startsWith("/dashboard/")) {
-    // Skip middleware for the main dashboard route
-    if (request.nextUrl.pathname === "/dashboard") {
-      return NextResponse.next();
-    }
-
-    // Check feature flags for role-based view pages
-    const isRoleBasedEnabled = await isFeatureEnabled(
-      FeatureFlag.ROLE_BASED_VIEWS
-    );
-
-    // Handle view-specific routes
-    if (request.nextUrl.pathname.startsWith("/dashboard/po-view")) {
-      if (
-        !isRoleBasedEnabled ||
-        !(await isFeatureEnabled(FeatureFlag.PO_VIEW))
-      ) {
-        return NextResponse.redirect(new URL("/dashboard", request.url));
-      }
-    } else if (request.nextUrl.pathname.startsWith("/dashboard/dev-view")) {
-      if (
-        !isRoleBasedEnabled ||
-        !(await isFeatureEnabled(FeatureFlag.DEV_VIEW))
-      ) {
-        return NextResponse.redirect(new URL("/dashboard", request.url));
-      }
-    } else if (request.nextUrl.pathname.startsWith("/dashboard/team-view")) {
-      if (
-        !isRoleBasedEnabled ||
-        !(await isFeatureEnabled(FeatureFlag.TEAM_VIEW))
-      ) {
-        return NextResponse.redirect(new URL("/dashboard", request.url));
-      }
-    }
-  }
+  // --- REMOVED Feature Flag Check Block ---
+  // The block checking ROLE_BASED_VIEWS, PO_VIEW, DEV_VIEW, TEAM_VIEW
+  // based on cookies has been removed.
+  // --- End Removal ---
 
   // Skip middleware for non-API routes and healthcheck
   if (
@@ -134,12 +81,7 @@ export async function middleware(request: NextRequest) {
   return response;
 }
 
-// Run middleware on both API routes and dashboard view routes
+// Update matcher to ONLY apply middleware to API routes now
 export const config = {
-  matcher: [
-    "/api/:path*",
-    "/dashboard/po-view/:path*",
-    "/dashboard/dev-view/:path*",
-    "/dashboard/team-view/:path*",
-  ],
+  matcher: ["/api/:path*"],
 };
