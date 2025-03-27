@@ -1,10 +1,10 @@
 // File: src/hooks/useUnifiedMRData.ts
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react"; // Added useMemo
 import {
   unifiedDataService,
   UnifiedDataResponse as ServiceResponse, // Rename to avoid conflict
 } from "@/services/UnifiedDataService";
-import { GitLabMRsResponse, FetchTeamMRsOptions } from "@/lib/gitlab";
+import { GitLabMRsResponse, FetchAllTeamMRsOptions } from "@/lib/gitlab"; // Use FetchAllTeamMRsOptions
 import {
   JiraTicket,
   JiraTicketWithMRs,
@@ -12,6 +12,7 @@ import {
   GitLabMRWithJira,
 } from "@/types/Jira";
 import { logger } from "@/lib/logger";
+import { useGitLabUsers } from "./useGitLabUsers"; // Import useGitLabUsers
 
 // Re-export MRDataType enum
 export enum MRDataType {
@@ -33,10 +34,11 @@ export interface UnifiedDataResponse<T> extends ServiceResponse<T> {
 // Props for the hook
 export interface UseUnifiedMRDataProps {
   dataType: MRDataType;
-  gitlabOptions?: Omit<FetchTeamMRsOptions, "groupId"> & {
-    page?: number;
+  // Use Omit<FetchAllTeamMRsOptions, "groupId"> for gitlabOptions
+  gitlabOptions?: Omit<FetchAllTeamMRsOptions, "groupId"> & {
+    page?: number; // Keep page/per_page separate for hygiene views if needed
     per_page?: number;
-  }; // Include pagination here
+  };
   jiraOptions?: JiraQueryOptions;
   refreshInterval?: number; // in milliseconds
   skipInitialFetch?: boolean;
@@ -69,17 +71,36 @@ export function useUnifiedMRData<T>(
     undefined
   );
 
+  // Get current team users and their IDs
+  const { teamUsers } = useGitLabUsers();
+  const currentTeamIds = useMemo(() => teamUsers.map((u) => u.id), [teamUsers]);
+
   // Function to fetch data based on the requested data type
   const fetchData = useCallback(
     async (options: { skipCache?: boolean } = {}) => {
       const { skipCache = false } = options;
+      // Ensure we have team IDs before fetching data that requires them
+      // For JIRA_TICKETS, team IDs might not be needed directly
+      if (dataType !== MRDataType.JIRA_TICKETS && currentTeamIds.length === 0) {
+        logger.warn(`Skipping fetch for ${dataType}: No team IDs available.`);
+        // Optionally set loading to false and data to empty/null
+        setIsLoading(false);
+        setData(dataType === MRDataType.JIRA_WITH_MRS ? [] : (null as any)); // Set appropriate empty state
+        return;
+      }
+
       try {
         setIsLoading(true);
         setIsError(false);
         setError(null);
 
         let result: any;
-        const fetchOpts = { ...gitlabOptions, skipCache }; // Combine options
+        // Combine options, adding currentTeamIds to gitlabOptions
+        const fetchOpts = {
+          ...gitlabOptions,
+          skipCache,
+          teamUserIds: currentTeamIds, // Pass current team IDs
+        };
         const jiraFetchOpts = { ...jiraOptions, skipCache };
 
         logger.debug(
@@ -99,21 +120,20 @@ export function useUnifiedMRData<T>(
             result = await unifiedDataService.fetchPendingReviewMRs(fetchOpts);
             break;
           case MRDataType.MRS_WITH_JIRA:
-            // Ensure getMRsWithJiraTickets accepts skipCache
-            result = await unifiedDataService.getMRsWithJiraTickets({
-              skipCache,
-            });
+            // Pass fetchOpts which includes teamUserIds
+            result = await unifiedDataService.getMRsWithJiraTickets(fetchOpts);
             break;
           case MRDataType.JIRA_TICKETS:
-            // Ensure fetchJiraTickets accepts skipCache
+            // teamUserIds might not be needed here
             result = await unifiedDataService.fetchJiraTickets(jiraFetchOpts);
             break;
           case MRDataType.JIRA_WITH_MRS:
-            // Ensure getJiraTicketsWithMRs accepts skipCache
+            // Pass fetchOpts (containing teamUserIds) as gitlabOptions
             result = await unifiedDataService.getJiraTicketsWithMRs({
-              gitlabOptions: fetchOpts, // Pass gitlab options separately
+              gitlabOptions: fetchOpts, // Pass combined options
               jiraOptions: jiraFetchOpts,
               skipCache,
+              teamUserIds: currentTeamIds, // Also pass explicitly if needed by top-level function
             });
             break;
           default:
@@ -143,16 +163,17 @@ export function useUnifiedMRData<T>(
         );
       }
     },
-    [dataType, gitlabOptions, jiraOptions] // Dependencies for the fetch logic itself
+    // Add currentTeamIds to dependencies
+    [dataType, gitlabOptions, jiraOptions, currentTeamIds]
   );
 
-  // Initial data fetch
+  // Initial data fetch & refetch when team changes
   useEffect(() => {
     if (!skipInitialFetch) {
-      fetchData(); // Initial fetch uses cache by default
+      fetchData(); // Fetch uses cache by default
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [skipInitialFetch]); // Only run on mount based on skipInitialFetch
+    // Refetch when currentTeamIds changes
+  }, [skipInitialFetch, fetchData, currentTeamIds]); // Add currentTeamIds dependency
 
   // Set up periodic refresh if requested
   useEffect(() => {
@@ -192,23 +213,23 @@ export function useUnifiedMRData<T>(
 }
 
 // --- Specialized Hooks ---
-// These remain largely the same, just ensuring they pass options correctly
+// These hooks now implicitly pass teamUserIds via the base hook
 
 export function usePOViewData(
   jiraOptions?: JiraQueryOptions,
-  gitlabOptions?: Omit<FetchTeamMRsOptions, "groupId">,
+  gitlabOptions?: Omit<FetchAllTeamMRsOptions, "groupId" | "teamUserIds">, // Remove teamUserIds from explicit options here
   refreshInterval?: number
 ): UnifiedDataResponse<JiraTicketWithMRs[]> {
   return useUnifiedMRData<JiraTicketWithMRs[]>({
     dataType: MRDataType.JIRA_WITH_MRS,
-    gitlabOptions,
+    gitlabOptions, // Pass remaining gitlab options
     jiraOptions,
     refreshInterval,
   });
 }
 
 export function useDevViewData(
-  gitlabOptions?: Omit<FetchTeamMRsOptions, "groupId">,
+  gitlabOptions?: Omit<FetchAllTeamMRsOptions, "groupId" | "teamUserIds">, // Remove teamUserIds
   refreshInterval?: number
 ): UnifiedDataResponse<GitLabMRWithJira[]> {
   return useUnifiedMRData<GitLabMRWithJira[]>({
@@ -220,11 +241,9 @@ export function useDevViewData(
 
 export function useTeamViewData(
   jiraOptions?: JiraQueryOptions,
-  gitlabOptions?: Omit<FetchTeamMRsOptions, "groupId">,
+  gitlabOptions?: Omit<FetchAllTeamMRsOptions, "groupId" | "teamUserIds">, // Remove teamUserIds
   refreshInterval?: number
 ): UnifiedDataResponse<JiraTicketWithMRs[]> {
-  // Team view might need both tickets grouped and all MRs.
-  // This hook currently fetches tickets grouped. Consider if a separate hook or combined data is needed.
   return useUnifiedMRData<JiraTicketWithMRs[]>({
     dataType: MRDataType.JIRA_WITH_MRS,
     gitlabOptions,
@@ -241,10 +260,11 @@ export function useHygieneViewData(
     | MRDataType.TOO_OLD
     | MRDataType.NOT_UPDATED
     | MRDataType.PENDING_REVIEW,
-  gitlabOptions?: Omit<FetchTeamMRsOptions, "groupId"> & {
+  gitlabOptions?: Omit<FetchAllTeamMRsOptions, "groupId" | "teamUserIds"> & {
+    // Remove teamUserIds
     page?: number;
     per_page?: number;
-  }, // Include pagination
+  },
   refreshInterval?: number
 ): UnifiedDataResponse<GitLabMRsResponse> {
   return useUnifiedMRData<GitLabMRsResponse>({

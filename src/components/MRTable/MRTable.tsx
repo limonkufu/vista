@@ -41,29 +41,47 @@ type SortDirection = "asc" | "desc";
 
 // Helper function to format dates consistently
 const formatDate = (dateString: string) => {
-  const date = new Date(dateString);
-  return date.toISOString().split('T')[0]; // Returns YYYY-MM-DD format
+  try {
+    const date = new Date(dateString);
+    // Check if date is valid before formatting
+    if (isNaN(date.getTime())) {
+      return "Invalid Date";
+    }
+    return date.toISOString().split("T")[0]; // Returns YYYY-MM-DD format
+  } catch (e) {
+    return "Invalid Date";
+  }
 };
 
 // Helper function to calculate time ago
 const timeAgo = (dateString: string) => {
-  const now = new Date();
-  const past = new Date(dateString);
-  const diffInMs = now.getTime() - past.getTime();
-  const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
-  
-  if (diffInDays === 0) {
-    const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
-    if (diffInHours === 0) {
-      const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
-      return `${diffInMinutes} minute${diffInMinutes !== 1 ? 's' : ''} ago`;
+  try {
+    const now = new Date();
+    const past = new Date(dateString);
+    // Check if date is valid
+    if (isNaN(past.getTime())) {
+      return "Invalid Date";
     }
-    return `${diffInHours} hour${diffInHours !== 1 ? 's' : ''} ago`;
-  } else if (diffInDays < 30) {
-    return `${diffInDays} day${diffInDays !== 1 ? 's' : ''} ago`;
-  } else {
-    const diffInMonths = Math.floor(diffInDays / 30);
-    return `${diffInMonths} month${diffInMonths !== 1 ? 's' : ''} ago`;
+    const diffInMs = now.getTime() - past.getTime();
+    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+
+    if (diffInDays < 0) return "in the future"; // Handle future dates if necessary
+
+    if (diffInDays === 0) {
+      const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+      if (diffInHours === 0) {
+        const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
+        return `${diffInMinutes} minute${diffInMinutes !== 1 ? "s" : ""} ago`;
+      }
+      return `${diffInHours} hour${diffInHours !== 1 ? "s" : ""} ago`;
+    } else if (diffInDays < 30) {
+      return `${diffInDays} day${diffInDays !== 1 ? "s" : ""} ago`;
+    } else {
+      const diffInMonths = Math.floor(diffInDays / 30);
+      return `${diffInMonths} month${diffInMonths !== 1 ? "s" : ""} ago`;
+    }
+  } catch (e) {
+    return "Invalid Date";
   }
 };
 
@@ -196,7 +214,11 @@ export function MRTable({
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
+                    <TableCell
+                      colSpan={7}
+                      className="h-24 text-center"
+                      role="status" // Add role="status"
+                    >
                       <Loader2 className="mx-auto h-6 w-6 animate-spin" />
                     </TableCell>
                   </TableRow>
@@ -246,54 +268,56 @@ export function MRTable({
             </Table>
           </div>
 
-          <Pagination>
-            <PaginationContent>
-              <PaginationItem>
-                <PaginationPrevious
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    if (metadata.currentPage > 1) {
-                      onPageChange(metadata.currentPage - 1);
-                    }
-                  }}
-                  className={cn(
-                    metadata.currentPage <= 1 &&
-                      "pointer-events-none opacity-50"
-                  )}
-                />
-              </PaginationItem>
-              {pageNumbers.map((page) => (
-                <PaginationItem key={page}>
-                  <PaginationLink
+          {metadata.totalPages > 1 && ( // Conditionally render pagination
+            <Pagination>
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
                     href="#"
                     onClick={(e) => {
                       e.preventDefault();
-                      onPageChange(page);
+                      if (metadata.currentPage > 1) {
+                        onPageChange(metadata.currentPage - 1);
+                      }
                     }}
-                    isActive={page === metadata.currentPage}
-                  >
-                    {page}
-                  </PaginationLink>
+                    className={cn(
+                      metadata.currentPage <= 1 &&
+                        "pointer-events-none opacity-50"
+                    )}
+                  />
                 </PaginationItem>
-              ))}
-              <PaginationItem>
-                <PaginationNext
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    if (metadata.currentPage < metadata.totalPages) {
-                      onPageChange(metadata.currentPage + 1);
-                    }
-                  }}
-                  className={cn(
-                    metadata.currentPage >= metadata.totalPages &&
-                      "pointer-events-none opacity-50"
-                  )}
-                />
-              </PaginationItem>
-            </PaginationContent>
-          </Pagination>
+                {pageNumbers.map((page) => (
+                  <PaginationItem key={page}>
+                    <PaginationLink
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        onPageChange(page);
+                      }}
+                      isActive={page === metadata.currentPage}
+                    >
+                      {page}
+                    </PaginationLink>
+                  </PaginationItem>
+                ))}
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (metadata.currentPage < metadata.totalPages) {
+                        onPageChange(metadata.currentPage + 1);
+                      }
+                    }}
+                    className={cn(
+                      metadata.currentPage >= metadata.totalPages &&
+                        "pointer-events-none opacity-50"
+                    )}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          )}
         </>
       )}
     </div>

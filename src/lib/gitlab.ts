@@ -4,7 +4,7 @@ import { logger, measurePerformance } from "./logger";
 import { gitlabApiCache } from "./gitlabCache";
 
 // --- Constants ---
-const GITLAB_API_BASE_URL = "https://gitlab.com/api/v4";
+export const GITLAB_API_BASE_URL = "https://gitlab.com/api/v4"; // Export for test
 const DEFAULT_PARENT_GROUP_PATH = "ska-telescope/ska-dev";
 const DEFAULT_SEARCH_GROUP_ID = "3180705"; // Group ID for user search
 
@@ -94,6 +94,12 @@ export interface FetchAllTeamMRsOptions {
   maxRetries?: number;
   include_subgroups?: boolean;
   skipCache?: boolean;
+  teamUserIds?: number[]; // <-- Add optional teamUserIds
+}
+
+export interface FetchTeamMRsOptions extends FetchAllTeamMRsOptions {
+  page?: number;
+  per_page?: number;
 }
 
 export interface GitLabMRsResponse {
@@ -150,7 +156,7 @@ async function gitlabRequest<T>(
     );
     const response = await axios.get<T>(url, {
       headers: { "PRIVATE-TOKEN": apiToken },
-      params: { per_page: 100, ...params },
+      params: { per_page: 100, ...params }, // Ensure per_page is set
     });
     return response.data;
   } catch (error) {
@@ -435,10 +441,15 @@ export async function fetchUsersByIds(
   return validUsers;
 }
 
-export function getTeamUserIds(): number[] {
+/**
+ * Gets the default team user IDs from the environment variable.
+ * Optionally accepts a string to parse instead (useful for testing or alternative sources).
+ */
+export function getTeamUserIds(idsString?: string | null): number[] {
   const userIds =
-    process.env.GITLAB_USER_IDS ||
-    process.env.NEXT_PUBLIC_GITLAB_USER_IDS ||
+    idsString ?? // Use provided string if available
+    process.env.GITLAB_USER_IDS ??
+    process.env.NEXT_PUBLIC_GITLAB_USER_IDS ??
     "";
   try {
     if (!userIds) return [];
@@ -446,16 +457,19 @@ export function getTeamUserIds(): number[] {
     const validIds = parsedIds.filter((id) => !isNaN(id));
     if (validIds.length !== parsedIds.length) {
       logger.warn(
-        "Some default user IDs were invalid and filtered out",
-        {},
+        "Some user IDs were invalid and filtered out",
+        { original: userIds },
         "GitLabAPI"
       );
     }
     return validIds;
   } catch (error) {
     logger.error(
-      "Error parsing default team user IDs",
-      { error: error instanceof Error ? error.message : "Unknown error" },
+      "Error parsing team user IDs",
+      {
+        input: userIds,
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
       "GitLabAPI"
     );
     return [];
@@ -465,7 +479,7 @@ export function getTeamUserIds(): number[] {
 export async function getDefaultTeamUsers(
   skipCache: boolean = false
 ): Promise<GitLabUser[]> {
-  const defaultIds = getTeamUserIds();
+  const defaultIds = getTeamUserIds(); // Gets IDs from ENV
   if (defaultIds.length === 0) {
     logger.warn("No default team IDs configured.");
     return [];
@@ -473,32 +487,39 @@ export async function getDefaultTeamUsers(
   return fetchUsersByIds(defaultIds, skipCache);
 }
 
-export function isTeamMember(
-  user: GitLabUser,
-  teamUsers: GitLabUser[]
-): boolean {
-  if (!user || !user.id || !teamUsers) return false;
-  return teamUsers.some((teamMember) => teamMember.id === user.id);
+/**
+ * Checks if a user ID belongs to the provided list of team IDs.
+ */
+export function isTeamMember(userId: number, teamUserIds: number[]): boolean {
+  if (!userId || !teamUserIds) return false;
+  return teamUserIds.includes(userId);
 }
 
-export function isTeamRelevantMR(
-  mr: GitLabMR,
-  teamUsers: GitLabUser[]
-): boolean {
-  if (!mr || !teamUsers) return false;
-  const isAuthorTeamMember = isTeamMember(mr.author, teamUsers);
+/**
+ * Checks if an MR is relevant to the team based on author, assignee, or reviewer IDs.
+ */
+export function isTeamRelevantMR(mr: GitLabMR, teamUserIds: number[]): boolean {
+  if (!mr || !teamUserIds || teamUserIds.length === 0) return false;
+
+  const isAuthorTeamMember = isTeamMember(mr.author.id, teamUserIds);
+
   const hasTeamAssignee =
-    mr.assignees?.some((assignee) => isTeamMember(assignee, teamUsers)) ||
-    (mr.assignee && isTeamMember(mr.assignee, teamUsers));
+    mr.assignees?.some((assignee) => isTeamMember(assignee.id, teamUserIds)) ||
+    (mr.assignee && isTeamMember(mr.assignee.id, teamUserIds));
+
   const hasTeamReviewer = mr.reviewers?.some((reviewer) =>
-    isTeamMember(reviewer, teamUsers)
+    isTeamMember(reviewer.id, teamUserIds)
   );
+
   return isAuthorTeamMember || hasTeamAssignee || hasTeamReviewer;
 }
 
+/**
+ * Fetches all merge requests for a group, optionally including subgroups,
+ * and then filters them based on relevance to the provided team user IDs.
+ */
 export async function fetchAllTeamMRs(
-  options: FetchAllTeamMRsOptions,
-  teamUsers: GitLabUser[]
+  options: FetchAllTeamMRsOptions
 ): Promise<{ items: GitLabMR[]; totalItems: number }> {
   const apiToken =
     process.env.GITLAB_API_TOKEN || process.env.NEXT_PUBLIC_GITLAB_API_TOKEN;
@@ -507,18 +528,17 @@ export async function fetchAllTeamMRs(
     throw new Error("GITLAB_API_TOKEN environment variable is not set");
   }
 
-  if (!teamUsers || teamUsers.length === 0) {
-    logger.warn("No team users provided, returning empty MR list.");
-    return { items: [], totalItems: 0 };
-  }
-
   const {
     groupId = process.env.GITLAB_GROUP_ID,
     state = "opened",
     maxRetries = 3,
     include_subgroups = true,
     skipCache = false,
+    teamUserIds: providedTeamUserIds, // Get optional team IDs from options
   } = options;
+
+  // Determine which team IDs to use for filtering
+  const filterTeamUserIds = providedTeamUserIds ?? getTeamUserIds(); // Use provided IDs or default from ENV
 
   if (!groupId) {
     logger.error(
@@ -529,42 +549,90 @@ export async function fetchAllTeamMRs(
     );
   }
 
+  // If no team IDs are available for filtering, return empty early
+  if (filterTeamUserIds.length === 0) {
+    logger.warn(
+      "No team user IDs provided or configured, returning empty MR list."
+    );
+    return { items: [], totalItems: 0 };
+  }
+
   const per_page = 100;
+  // Include teamUserIds in the cache key if they were provided, otherwise use 'default'
+  const teamIdCacheSegment = providedTeamUserIds
+    ? providedTeamUserIds.sort().join(",")
+    : "default";
   const baseCacheKeyParams = {
     state,
     per_page,
     include_subgroups: include_subgroups ? "true" : "false",
+    teamIds: teamIdCacheSegment, // Add team info to cache key
   };
   const baseEndpoint = `groups/${groupId}/merge_requests`;
 
-  const fullDatasetCacheKey = gitlabApiCache.generateKey(
-    `${baseEndpoint}-all-raw`,
+  // Cache key for the *final filtered* result for this team
+  const filteredDatasetCacheKey = gitlabApiCache.generateKey(
+    `${baseEndpoint}-filtered`,
     baseCacheKeyParams
+  );
+
+  if (!skipCache) {
+    const cachedFilteredData = gitlabApiCache.get(filteredDatasetCacheKey);
+    if (cachedFilteredData) {
+      logger.info(
+        "Using cached FILTERED dataset for GitLab MRs",
+        {
+          groupId,
+          state,
+          include_subgroups,
+          teamIdCacheSegment,
+          cacheKey: filteredDatasetCacheKey,
+        },
+        "GitLabAPI"
+      );
+      const items = cachedFilteredData.data as GitLabMR[];
+      return { items, totalItems: items.length };
+    }
+    logger.info(
+      "FILTERED dataset cache miss, will fetch raw data.",
+      { cacheKey: filteredDatasetCacheKey },
+      "GitLabAPI"
+    );
+  }
+
+  // --- Fetch Raw Data (Page by Page) ---
+  // Cache key for the raw, unfiltered data
+  const rawDataCacheKeyParams = { ...baseCacheKeyParams };
+  delete rawDataCacheKeyParams.teamIds; // Raw data cache doesn't depend on team
+  const fullRawDatasetCacheKey = gitlabApiCache.generateKey(
+    `${baseEndpoint}-all-raw`,
+    rawDataCacheKeyParams
   );
 
   let allMRs: GitLabMR[] = [];
 
   if (!skipCache) {
-    const cachedRawData = gitlabApiCache.get(fullDatasetCacheKey);
+    const cachedRawData = gitlabApiCache.get(fullRawDatasetCacheKey);
     if (cachedRawData) {
       logger.info(
         "Using cached full RAW dataset for GitLab MRs",
-        { groupId, state, include_subgroups, cacheKey: fullDatasetCacheKey },
+        { groupId, state, include_subgroups, cacheKey: fullRawDatasetCacheKey },
         "GitLabAPI"
       );
       allMRs = cachedRawData.data as GitLabMR[];
     } else {
       logger.info(
         "Full RAW dataset cache miss, fetching page by page.",
-        { cacheKey: fullDatasetCacheKey },
+        { cacheKey: fullRawDatasetCacheKey },
         "GitLabAPI"
       );
     }
   }
 
   if (allMRs.length === 0) {
+    // (Keep the existing pagination loop from the previous fix to fetch all raw MRs)
     let currentPage = 1;
-    let totalPages = 1;
+    let nextUrl: string | null = `${GITLAB_API_BASE_URL}/${baseEndpoint}`; // Start with the base URL for page 1
     let retries = 0;
 
     logger.info(
@@ -573,20 +641,27 @@ export async function fetchAllTeamMRs(
       "GitLabAPI"
     );
 
-    while (currentPage <= totalPages) {
-      const pageCacheKey = gitlabApiCache.generateKey(baseEndpoint, {
-        ...baseCacheKeyParams,
+    while (nextUrl) {
+      // Use a cache key specific to the raw page fetch
+      const rawPageCacheKeyParams = {
+        ...rawDataCacheKeyParams,
         page: currentPage,
-      });
+      };
+      const pageCacheKey = gitlabApiCache.generateKey(
+        baseEndpoint,
+        rawPageCacheKeyParams
+      );
 
       let pageData: GitLabMR[] | null = null;
+      let responseHeaders: Record<string, string | number> = {}; // Store headers
 
       if (!skipCache) {
         const cachedPage = gitlabApiCache.get(pageCacheKey);
         if (cachedPage) {
           pageData = cachedPage.data as GitLabMR[];
+          responseHeaders = cachedPage.headers; // Get headers from cache
           logger.debug(
-            `Using cached raw page ${currentPage}/${totalPages}`,
+            `Using cached raw page ${currentPage}`,
             { cacheKey: pageCacheKey },
             "GitLabAPI"
           );
@@ -596,31 +671,35 @@ export async function fetchAllTeamMRs(
       if (!pageData) {
         try {
           logger.debug(
-            `Fetching raw page ${currentPage}/${totalPages || "?"}`,
-            { cacheKey: pageCacheKey },
+            `Fetching raw page ${currentPage}`,
+            { url: nextUrl, cacheKey: pageCacheKey }, // Log the actual URL being fetched
             "GitLabAPI"
           );
-          const responseData = await measurePerformance(
-            `GitLab API Request Page ${currentPage}`,
-            () =>
-              gitlabRequest<GitLabMR[]>(
-                `${GITLAB_API_BASE_URL}/${baseEndpoint}`,
-                {
-                  state,
-                  page: currentPage,
-                  per_page,
-                  scope: "all",
-                  include_subgroups,
-                }
-              )
-          );
-          pageData = responseData;
+          // Use axios directly to get headers easily
+          const response = await axios.get<GitLabMR[]>(nextUrl, {
+            headers: { "PRIVATE-TOKEN": apiToken },
+            params: {
+              // Params are already in nextUrl if it's from Link header,
+              // but ensure base params are included for the first request
+              ...(currentPage === 1 && {
+                state,
+                per_page,
+                scope: "all",
+                include_subgroups,
+              }),
+            },
+          });
+
+          pageData = response.data;
+          responseHeaders = response.headers; // Store headers from the response
 
           if (!skipCache) {
-            gitlabApiCache.set(pageCacheKey, pageData || [], {});
+            // Cache raw page data and headers
+            gitlabApiCache.set(pageCacheKey, pageData || [], responseHeaders);
           }
-          retries = 0;
+          retries = 0; // Reset retries on success
         } catch (error) {
+          // ... (keep existing retry logic) ...
           const axiosError = error as AxiosError;
           logger.error(
             `GitLab API error fetching page ${currentPage}`,
@@ -642,7 +721,7 @@ export async function fetchAllTeamMRs(
               "GitLabAPI"
             );
             await new Promise((resolve) => setTimeout(resolve, delay));
-            continue;
+            continue; // Retry the current loop iteration (same nextUrl)
           } else {
             logger.error(
               `Max retries reached for page ${currentPage}. Aborting fetch.`,
@@ -658,16 +737,49 @@ export async function fetchAllTeamMRs(
 
       if (pageData && pageData.length > 0) {
         allMRs.push(...pageData);
-        if (pageData.length === per_page) {
-          if (totalPages === currentPage) totalPages++;
-        } else {
-          totalPages = currentPage;
-        }
-      } else {
-        totalPages = currentPage - 1;
       }
-      currentPage++;
+
+      // Determine the next URL from the 'Link' header or 'x-next-page'
+      const linkHeader = responseHeaders["link"] as string;
+      let foundNextUrl: string | null = null;
+      if (linkHeader) {
+        const links = linkHeader.split(", ");
+        const nextLink = links.find((link) => link.includes('rel="next"'));
+        if (nextLink) {
+          foundNextUrl = nextLink.substring(
+            nextLink.indexOf("<") + 1,
+            nextLink.indexOf(">")
+          );
+        }
+      }
+      // Fallback or alternative: check x-next-page
+      if (!foundNextUrl && responseHeaders["x-next-page"]) {
+        // Construct full URL if only page number is given
+        const nextPageNum = parseInt(
+          String(responseHeaders["x-next-page"]),
+          10
+        );
+        if (!isNaN(nextPageNum)) {
+          const url = new URL(`${GITLAB_API_BASE_URL}/${baseEndpoint}`);
+          url.searchParams.set("page", String(nextPageNum));
+          url.searchParams.set("per_page", String(per_page));
+          if (state) url.searchParams.set("state", state);
+          if (include_subgroups)
+            url.searchParams.set("include_subgroups", "true");
+          url.searchParams.set("scope", "all");
+          foundNextUrl = url.toString();
+        }
+      }
+
+      nextUrl = foundNextUrl; // Update nextUrl for the next iteration
+      currentPage++; // Increment page counter (mainly for logging/cache key)
+
+      // Break if no more data or no next link/page
+      if (!pageData || pageData.length === 0 || !nextUrl) {
+        break;
+      }
     }
+    // --- End of pagination loop ---
 
     logger.info(
       "Finished fetching all GitLab MR pages (Raw)",
@@ -675,17 +787,26 @@ export async function fetchAllTeamMRs(
       "GitLabAPI"
     );
 
+    // Cache the full raw dataset
     if (!skipCache) {
-      gitlabApiCache.set(fullDatasetCacheKey, allMRs, {});
+      gitlabApiCache.set(fullRawDatasetCacheKey, allMRs, {});
     }
   }
 
-  const teamMRs = allMRs.filter((mr) => isTeamRelevantMR(mr, teamUsers));
+  // --- Filter Raw Data ---
+  const teamMRs = allMRs.filter((mr) =>
+    isTeamRelevantMR(mr, filterTeamUserIds)
+  );
   logger.info(
     "Filtered MRs for team relevance",
-    { teamMRsCount: teamMRs.length },
+    { teamMRsCount: teamMRs.length, teamIdsUsed: filterTeamUserIds },
     "GitLabAPI"
   );
+
+  // Cache the *filtered* result
+  if (!skipCache) {
+    gitlabApiCache.set(filteredDatasetCacheKey, teamMRs, {});
+  }
 
   return {
     items: teamMRs,
@@ -694,6 +815,39 @@ export async function fetchAllTeamMRs(
 }
 
 // --- Deprecated Functions ---
+/** @deprecated Use UnifiedDataService instead */
+export async function fetchTeamMRs(
+  options: FetchTeamMRsOptions
+): Promise<GitLabMRsResponse> {
+  logger.warn(
+    "fetchTeamMRs is deprecated. Use UnifiedDataService or fetchAllTeamMRs.",
+    {},
+    "GitLabAPI"
+  );
+  // Basic implementation for backward compatibility if needed, but ideally remove calls
+  // This now correctly uses the default team IDs for filtering via fetchAllTeamMRs
+  const allData = await fetchAllTeamMRs(options); // Pass options directly
+  const { page = 1, per_page = 25 } = options;
+  const totalItems = allData.totalItems;
+  const totalPages = Math.ceil(totalItems / per_page);
+  const startIndex = (page - 1) * per_page;
+  const endIndex = startIndex + per_page;
+  const paginatedItems = allData.items.slice(startIndex, endIndex);
+
+  return {
+    items: paginatedItems,
+    metadata: {
+      totalItems,
+      totalPages,
+      currentPage: page,
+      perPage: per_page,
+      nextPage: page < totalPages ? page + 1 : undefined,
+      prevPage: page > 1 ? page - 1 : undefined,
+      lastRefreshed: new Date().toISOString(),
+    },
+  };
+}
+
 /** @deprecated */
 export async function fetchTooOldMRs(
   options: FetchTeamMRsOptions

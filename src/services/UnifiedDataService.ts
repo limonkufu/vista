@@ -4,7 +4,8 @@ import {
   GitLabMR,
   GitLabMRsResponse,
   FetchAllTeamMRsOptions,
-  getTeamUserIds,
+  getTeamUserIds, // Keep this for default behavior
+  isTeamRelevantMR, // Keep this if filtering is done here
 } from "@/lib/gitlab";
 import {
   JiraTicket,
@@ -41,7 +42,6 @@ const processedDataCache: Record<
 
 // Default cache TTL in milliseconds (using constant from cacheConfig)
 const DEFAULT_CACHE_TTL = TTL_MS.PROCESSED_DATA;
-// FIX: Removed duplicate declaration: const DEFAULT_CACHE_TTL = 60 * 60 * 1000;
 
 // Generate a consistent cache key based on operation and options
 function generateCacheKey(operation: string, options?: any): string {
@@ -51,7 +51,12 @@ function generateCacheKey(operation: string, options?: any): string {
         .reduce((obj, key) => {
           // Exclude skipCache from the key itself
           if (key !== "skipCache") {
-            obj[key] = options[key];
+            // Ensure teamUserIds is sorted for consistency
+            if (key === "teamUserIds" && Array.isArray(options[key])) {
+              obj[key] = [...options[key]].sort((a, b) => a - b);
+            } else {
+              obj[key] = options[key];
+            }
           }
           return obj;
         }, {} as any)
@@ -123,11 +128,13 @@ class UnifiedDataService {
   // --- Private Helper Methods ---
 
   /**
-   * Fetches the base set of all relevant team MRs, using GitLab cache.
+   * Fetches the base set of relevant team MRs, using GitLab cache.
+   * Accepts optional teamUserIds to override default filtering.
    */
   private async _getBaseMRs(
     options: Omit<FetchAllTeamMRsOptions, "groupId"> & {
       skipCache?: boolean;
+      teamUserIds?: number[]; // Accept teamUserIds
     } = {}
   ): Promise<GitLabMR[]> {
     const groupId =
@@ -136,15 +143,16 @@ class UnifiedDataService {
       "";
     if (!groupId) throw new Error("GITLAB_GROUP_ID not set");
 
+    // Prepare options for fetchAllTeamMRs, including teamUserIds
     const fetchOptions: FetchAllTeamMRsOptions = {
       groupId,
       state: options.state || "opened",
       include_subgroups: options.include_subgroups ?? true,
-      skipCache: options.skipCache ?? false, // Pass skipCache to the underlying fetch
+      skipCache: options.skipCache ?? false,
+      teamUserIds: options.teamUserIds, // Pass teamUserIds down
     };
 
-    // Use a cache key specific to the base fetch operation within this service
-    // This service cache is for the *result* of fetchAllTeamMRs, which itself uses gitlabApiCache
+    // Cache key includes teamUserIds (or 'default') via generateCacheKey
     const cacheKey = generateCacheKey("baseMRs", fetchOptions);
 
     if (!fetchOptions.skipCache) {
@@ -153,9 +161,9 @@ class UnifiedDataService {
     }
 
     try {
-      // fetchAllTeamMRs handles its own caching via gitlabApiCache
+      // fetchAllTeamMRs now handles filtering based on teamUserIds passed in options
       const result = await fetchAllTeamMRs(fetchOptions);
-      setInCache(cacheKey, result.items); // Cache the base items in this service's cache
+      setInCache(cacheKey, result.items); // Cache the filtered items
       return result.items;
     } catch (error) {
       logger.error("Failed to fetch base MRs", { error }, "UnifiedDataService");
@@ -164,13 +172,15 @@ class UnifiedDataService {
   }
 
   /**
-   * Fetches or retrieves cached base MRs and enriches them with Jira data.
+   * Fetches or retrieves cached base MRs (filtered by team) and enriches them with Jira data.
    */
   private async _getEnrichedMRs(
     options: Omit<FetchAllTeamMRsOptions, "groupId"> & {
       skipCache?: boolean;
+      teamUserIds?: number[]; // Accept teamUserIds
     } = {}
   ): Promise<GitLabMRWithJira[]> {
+    // Cache key includes teamUserIds via generateCacheKey
     const cacheKey = generateCacheKey("enrichedMRs", options);
 
     if (!options.skipCache) {
@@ -179,10 +189,10 @@ class UnifiedDataService {
     }
 
     try {
-      // Pass skipCache down to get fresh base MRs if needed
+      // Pass skipCache and teamUserIds down to get fresh, filtered base MRs if needed
       const baseMRs = await this._getBaseMRs(options);
       const enrichedMRs = await mrJiraAssociationService.enhanceMRsWithJira(
-        baseMRs
+        baseMRs // enhanceMRsWithJira works on the already filtered list
       );
       setInCache(cacheKey, enrichedMRs);
       return enrichedMRs;
@@ -221,13 +231,17 @@ class UnifiedDataService {
     options: {
       page?: number;
       per_page?: number;
-      skipCache?: boolean; // Added skipCache option
+      skipCache?: boolean;
+      teamUserIds?: number[]; // Accept teamUserIds
     } = {}
   ): Promise<GitLabMRsResponse> {
-    const { page = 1, per_page = 25, skipCache = false } = options;
+    const { page = 1, per_page = 25, skipCache = false, teamUserIds } = options;
     const threshold = thresholds.TOO_OLD_THRESHOLD;
-    // Cache key for the *filtered* result
-    const cacheKey = generateCacheKey("filteredTooOldMRs", { threshold });
+    // Cache key for the *final filtered and paginated* result
+    const cacheKey = generateCacheKey("filteredTooOldMRs", {
+      threshold,
+      teamUserIds,
+    }); // Include teamUserIds
 
     if (!skipCache) {
       const cached = getFromCache<GitLabMR[]>(cacheKey);
@@ -252,8 +266,8 @@ class UnifiedDataService {
     }
 
     try {
-      // Pass skipCache to get fresh base data if needed
-      const baseMRs = await this._getBaseMRs({ skipCache });
+      // Pass skipCache and teamUserIds to get filtered base data
+      const baseMRs = await this._getBaseMRs({ skipCache, teamUserIds });
       const thresholdDate = new Date();
       thresholdDate.setDate(thresholdDate.getDate() - threshold);
 
@@ -298,12 +312,16 @@ class UnifiedDataService {
     options: {
       page?: number;
       per_page?: number;
-      skipCache?: boolean; // Added skipCache option
+      skipCache?: boolean;
+      teamUserIds?: number[]; // Accept teamUserIds
     } = {}
   ): Promise<GitLabMRsResponse> {
-    const { page = 1, per_page = 25, skipCache = false } = options;
+    const { page = 1, per_page = 25, skipCache = false, teamUserIds } = options;
     const threshold = thresholds.NOT_UPDATED_THRESHOLD;
-    const cacheKey = generateCacheKey("filteredNotUpdatedMRs", { threshold });
+    const cacheKey = generateCacheKey("filteredNotUpdatedMRs", {
+      threshold,
+      teamUserIds,
+    });
 
     if (!skipCache) {
       const cached = getFromCache<GitLabMR[]>(cacheKey);
@@ -328,7 +346,7 @@ class UnifiedDataService {
     }
 
     try {
-      const baseMRs = await this._getBaseMRs({ skipCache });
+      const baseMRs = await this._getBaseMRs({ skipCache, teamUserIds });
       const thresholdDate = new Date();
       thresholdDate.setDate(thresholdDate.getDate() - threshold);
 
@@ -373,14 +391,19 @@ class UnifiedDataService {
     options: {
       page?: number;
       per_page?: number;
-      skipCache?: boolean; // Added skipCache option
+      skipCache?: boolean;
+      teamUserIds?: number[]; // Accept teamUserIds
     } = {}
   ): Promise<GitLabMRsResponse> {
-    const { page = 1, per_page = 25, skipCache = false } = options;
+    const { page = 1, per_page = 25, skipCache = false, teamUserIds } = options;
     const threshold = thresholds.PENDING_REVIEW_THRESHOLD;
     const cacheKey = generateCacheKey("filteredPendingReviewMRs", {
       threshold,
+      teamUserIds,
     });
+
+    // Determine which team IDs to use for the actual reviewer check
+    const reviewerCheckTeamIds = teamUserIds ?? getTeamUserIds();
 
     if (!skipCache) {
       const cached = getFromCache<GitLabMR[]>(cacheKey);
@@ -405,18 +428,21 @@ class UnifiedDataService {
     }
 
     try {
-      const baseMRs = await this._getBaseMRs({ skipCache });
+      // Get base MRs already filtered by author/assignee/reviewer for the *teamUserIds*
+      const baseMRs = await this._getBaseMRs({ skipCache, teamUserIds });
       const thresholdDate = new Date();
       thresholdDate.setDate(thresholdDate.getDate() - threshold);
-      const teamUserIds = getTeamUserIds(); // Now defined due to import
 
+      // Now apply the specific "pending review" logic
       const filteredMRs = baseMRs.filter((mr) => {
+        // Check if any reviewer is in the *reviewerCheckTeamIds*
         const isTeamReviewer = mr.reviewers.some((reviewer) =>
-          teamUserIds.includes(reviewer.id)
+          reviewerCheckTeamIds.includes(reviewer.id)
         );
         const updatedDate = new Date(mr.updated_at);
         const isOldUpdate = updatedDate < thresholdDate;
-        return isTeamReviewer && isOldUpdate;
+        // Ensure MR is still open
+        return mr.state === "opened" && isTeamReviewer && isOldUpdate;
       });
 
       setInCache(cacheKey, filteredMRs);
@@ -456,6 +482,7 @@ class UnifiedDataService {
   ): Promise<JiraTicket[]> {
     // Pass skipCache option to the underlying service if needed
     try {
+      // Jira service uses /api/jira which has its own cache mechanism
       return await jiraService.getTickets(options);
     } catch (error) {
       logger.error(
@@ -471,9 +498,12 @@ class UnifiedDataService {
    * Get MRs enriched with associated Jira tickets.
    */
   async getMRsWithJiraTickets(
-    options: { skipCache?: boolean } = {} // Added skipCache option
+    options: {
+      skipCache?: boolean;
+      teamUserIds?: number[]; // Accept teamUserIds
+    } = {}
   ): Promise<GitLabMRWithJira[]> {
-    // Caching is handled within _getEnrichedMRs, pass skipCache
+    // Caching is handled within _getEnrichedMRs, pass skipCache and teamUserIds
     try {
       return await this._getEnrichedMRs(options);
     } catch (error) {
@@ -491,16 +521,23 @@ class UnifiedDataService {
    */
   async getJiraTicketsWithMRs(
     options: {
-      gitlabOptions?: Omit<FetchAllTeamMRsOptions, "groupId">;
+      gitlabOptions?: Omit<FetchAllTeamMRsOptions, "groupId" | "teamUserIds">; // Remove teamUserIds here
       jiraOptions?: JiraQueryOptions;
-      skipCache?: boolean; // Added skipCache option
+      skipCache?: boolean;
+      teamUserIds?: number[]; // Accept teamUserIds at this level
     } = {}
   ): Promise<JiraTicketWithMRs[]> {
-    const { gitlabOptions = {}, jiraOptions = {}, skipCache = false } = options;
-    // Pass skipCache to generate key correctly if needed, or handle inside
+    const {
+      gitlabOptions = {},
+      jiraOptions = {},
+      skipCache = false,
+      teamUserIds,
+    } = options;
+    // Cache key includes teamUserIds
     const cacheKey = generateCacheKey("groupedJiraTicketsWithMRs", {
       gitlabOptions,
       jiraOptions,
+      teamUserIds, // Include teamUserIds in cache key
     });
 
     if (!skipCache) {
@@ -509,10 +546,11 @@ class UnifiedDataService {
     }
 
     try {
-      // Pass skipCache down to ensure fresh data if requested
+      // Pass skipCache and teamUserIds down to ensure filtered, fresh data if requested
       const enrichedMRs = await this._getEnrichedMRs({
         ...gitlabOptions,
         skipCache,
+        teamUserIds, // Pass teamUserIds
       });
 
       // Grouping logic remains the same
@@ -527,6 +565,7 @@ class UnifiedDataService {
           }
           groupedByJira[mr.jiraTicketKey].push(mr);
         }
+        // Optionally handle MRs without Jira tickets if needed for the view
       });
 
       let result: JiraTicketWithMRs[] = Object.entries(groupedByJira).map(

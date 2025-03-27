@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom";
 import { jest } from "@jest/globals";
 
 // Define navigation globally for next-nprogress-bar

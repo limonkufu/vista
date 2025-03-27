@@ -11,6 +11,7 @@ import {
   fetchAllTeamMRs,
   GitLabUser,
   GitLabMR,
+  GITLAB_API_BASE_URL, // Import this if needed for the test fix
 } from "@/lib/gitlab"; // Adjust path as needed
 import { gitlabApiCache } from "@/lib/gitlabCache"; // Import cache
 
@@ -174,7 +175,12 @@ describe("GitLab API Utility", () => {
       expect(mockedAxios.get).toHaveBeenNthCalledWith(
         1,
         expect.stringContaining("/groups/ska-telescope%2Fska-dev/subgroups"),
-        expect.objectContaining({ params: { search: "target-group" } })
+        expect.objectContaining({
+          params: {
+            search: "target-group",
+            per_page: 100, // Add this line
+          },
+        })
       );
       expect(mockedAxios.get).toHaveBeenNthCalledWith(
         2,
@@ -343,12 +349,20 @@ describe("GitLab API Utility", () => {
       // Mock page 1 response
       mockedAxios.get.mockResolvedValueOnce({
         data: mockMRPage1,
-        headers: { "x-total-pages": "2", "x-next-page": "2" },
+        headers: {
+          "x-total-pages": "2",
+          "x-next-page": "2",
+          link: `<${GITLAB_API_BASE_URL}/groups/mock-group-id/merge_requests?page=2&per_page=100>; rel="next"`, // Example Link header
+        },
       });
       // Mock page 2 response
       mockedAxios.get.mockResolvedValueOnce({
         data: mockMRPage2,
-        headers: { "x-total-pages": "2", "x-next-page": "" },
+        headers: {
+          "x-total-pages": "2",
+          "x-next-page": "",
+          link: `<${GITLAB_API_BASE_URL}/groups/mock-group-id/merge_requests?page=1&per_page=100>; rel="prev"`, // Example Link header
+        },
       });
 
       const result = await fetchAllTeamMRs(
@@ -360,7 +374,7 @@ describe("GitLab API Utility", () => {
       expect(result.items.map((mr) => mr.id)).toEqual([1, 2, 3]);
       expect(result.totalItems).toBe(3);
       expect(mockedAxios.get).toHaveBeenCalledTimes(2);
-      // Check params for page 1
+      // Check URL for page 1
       expect(mockedAxios.get).toHaveBeenNthCalledWith(
         1,
         expect.stringContaining("/groups/mock-group-id/merge_requests"),
@@ -368,12 +382,13 @@ describe("GitLab API Utility", () => {
           params: expect.objectContaining({ page: 1, per_page: 100 }),
         })
       );
-      // Check params for page 2
+      // Check URL for page 2 (using the Link header URL)
       expect(mockedAxios.get).toHaveBeenNthCalledWith(
         2,
-        expect.stringContaining("/groups/mock-group-id/merge_requests"),
+        `${GITLAB_API_BASE_URL}/groups/mock-group-id/merge_requests?page=2&per_page=100`, // Exact URL from mock Link header
         expect.objectContaining({
-          params: expect.objectContaining({ page: 2, per_page: 100 }),
+          headers: expect.any(Object),
+          // Params might be empty here as they are in the URL
         })
       );
     });
@@ -385,7 +400,11 @@ describe("GitLab API Utility", () => {
         .mockResolvedValueOnce({
           // Success page 1
           data: mockMRPage1,
-          headers: { "x-total-pages": "1", "x-next-page": "" },
+          headers: {
+            "x-total-pages": "1",
+            "x-next-page": "", // Explicitly empty
+            link: `<${GITLAB_API_BASE_URL}/groups/mock-group-id/merge_requests?page=1&per_page=100>; rel="first", <${GITLAB_API_BASE_URL}/groups/mock-group-id/merge_requests?page=1&per_page=100>; rel="last"`, // Example Link header for last page
+          },
         });
 
       // Mock setTimeout for immediate retry
@@ -399,7 +418,7 @@ describe("GitLab API Utility", () => {
         teamUsersForFetch
       );
 
-      expect(result.items).toHaveLength(2); // Both MRs from page 1 are relevant
+      expect(result.items).toHaveLength(2); // MRs 1 and 2 are relevant from page 1
       expect(mockedAxios.get).toHaveBeenCalledTimes(2); // Called twice due to retry
 
       (global.setTimeout as jest.Mock).mockRestore(); // Restore setTimeout

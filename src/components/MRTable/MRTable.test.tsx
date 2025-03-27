@@ -139,8 +139,9 @@ describe("MRTable", () => {
     expect(screen.getByText("charlie")).toBeInTheDocument(); // Author username
     expect(screen.getByText("assignee_1")).toBeInTheDocument();
     expect(screen.getByText("reviewer_1")).toBeInTheDocument();
-    expect(screen.getByText(/Created .* ago/)).toBeInTheDocument(); // Check for relative time
-    expect(screen.getByText(/Updated .* ago/)).toBeInTheDocument(); // Check for relative time
+    // Use getAllByText and check length or first element
+    expect(screen.getAllByText(/Created .* ago/)[0]).toBeInTheDocument();
+    expect(screen.getAllByText(/Updated .* ago/)[0]).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /view/i })[0]).toHaveAttribute(
       "href",
       "https://gitlab.com/mock/project/-/merge_requests/1"
@@ -159,8 +160,10 @@ describe("MRTable", () => {
       />
     );
 
-    // Check for loader presence (adjust selector based on actual loader)
-    expect(screen.getByRole("status")).toBeInTheDocument(); // Assuming Loader2 has role="status"
+    // Check for loader presence inside TableCell
+    expect(screen.getByRole("cell")).toContainElement(
+      screen.getByRole("status")
+    );
     expect(
       screen.queryByText("No merge requests found")
     ).not.toBeInTheDocument();
@@ -260,15 +263,15 @@ describe("MRTable", () => {
       />
     );
 
-    const nextButton = screen.getByRole("button", { name: /go to next page/i });
-    const prevButton = screen.getByRole("button", {
+    const nextButton = screen.getByRole("link", { name: /go to next page/i });
+    const prevButton = screen.getByRole("link", {
       name: /go to previous page/i,
     });
-    const page2Link = screen.getByRole("link", { name: /page 2/i }); // shadcn uses links
+    const page2Link = screen.getByRole("link", { name: "2" }); // Use exact number
 
     // Initial state: Prev disabled, Next enabled
-    expect(prevButton).toHaveClass("pointer-events-none");
-    expect(nextButton).not.toHaveClass("pointer-events-none");
+    expect(prevButton).toHaveClass("pointer-events-none", "opacity-50");
+    expect(nextButton).not.toHaveClass("pointer-events-none", "opacity-50");
 
     // Go to page 2
     fireEvent.click(nextButton);
@@ -285,15 +288,15 @@ describe("MRTable", () => {
         onRefresh={mockOnRefresh}
       />
     );
-    expect(prevButton).not.toHaveClass("pointer-events-none");
-    expect(nextButton).not.toHaveClass("pointer-events-none"); // Still more pages
+    expect(prevButton).not.toHaveClass("pointer-events-none", "opacity-50");
+    expect(nextButton).not.toHaveClass("pointer-events-none", "opacity-50"); // Still more pages
 
     // Click specific page link
     fireEvent.click(page2Link); // Already on page 2, but test the click
     expect(mockOnPageChange).toHaveBeenCalledWith(2);
 
     // Go to last page
-    fireEvent.click(screen.getByRole("link", { name: /page 3/i }));
+    fireEvent.click(screen.getByRole("link", { name: "3" })); // Use exact number
     expect(mockOnPageChange).toHaveBeenCalledWith(3);
 
     // Simulate re-render with page 3 data
@@ -307,8 +310,8 @@ describe("MRTable", () => {
         onRefresh={mockOnRefresh}
       />
     );
-    expect(prevButton).not.toHaveClass("pointer-events-none");
-    expect(nextButton).toHaveClass("pointer-events-none"); // Next should be disabled
+    expect(prevButton).not.toHaveClass("pointer-events-none", "opacity-50");
+    expect(nextButton).toHaveClass("pointer-events-none", "opacity-50"); // Next should be disabled
   });
 
   it("calls onRefresh when refresh button is clicked", () => {
@@ -339,7 +342,8 @@ describe("MRTable", () => {
         onRefresh={mockOnRefresh}
       />
     );
-    expect(screen.getByRole("button", { name: /refresh/i })).toBeDisabled();
+    const refreshButton = screen.getByRole("button", { name: "" }); // Name is empty because only icon shows
+    expect(refreshButton).toHaveAttribute("disabled");
   });
 
   it("displays threshold and last refreshed time", () => {

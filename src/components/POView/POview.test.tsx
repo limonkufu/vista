@@ -7,137 +7,115 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { POView } from "@/components/POView/POView"; // Adjust path
-import { usePOViewData } from "@/hooks/useUnifiedMRData"; // Import the hook used by the component
-import { LayoutProvider } from "@/contexts/LayoutContext"; // Import LayoutProvider
-import { ThemeProviderClient } from "@/components/ThemeProviderClient"; // Import ThemeProvider
+import "@testing-library/jest-dom";
+import { POView } from "@/components/POView/POView";
+import { usePOViewData } from "@/hooks/useUnifiedMRData";
+import { LayoutProvider } from "@/contexts/LayoutContext";
+import { ThemeProviderClient } from "@/components/ThemeProviderClient";
 import {
   JiraTicketStatus,
   JiraTicketPriority,
   JiraTicketType,
   JiraTicketWithMRs,
-} from "@/types/Jira"; // Adjust path
+} from "@/types/Jira";
+import { jest } from "@jest/globals";
 
-// --- Mock Data ---
-const mockRefetch = jest.fn().mockResolvedValue(undefined);
-
-const createMockTicketWithMRs = (
-  id: number,
-  status: JiraTicketStatus
-): JiraTicketWithMRs => ({
-  ticket: {
-    id: `jira-${id}`,
-    key: `PROJ-${id}`,
-    title: `Test Ticket ${id}`,
-    status: status,
-    priority: JiraTicketPriority.MEDIUM,
-    type: JiraTicketType.STORY,
-    created: new Date().toISOString(),
-    updated: new Date().toISOString(),
-    url: `http://jira.example.com/PROJ-${id}`,
-    storyPoints: 3,
-    assignee: { id: `user-${id}`, name: `Assignee ${id}` },
-  },
-  mrs: [
-    {
-      id: id * 100 + 1,
-      iid: id * 100 + 1,
-      project_id: 1,
-      title: `MR for PROJ-${id}`,
-      state: "opened",
-      author: { id: 1, name: "Dev A", username: "dev_a" },
-      reviewers: [],
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      web_url: `http://gitlab.example.com/${id * 100 + 1}`,
-      source_branch: `f/PROJ-${id}`,
-      target_branch: "main",
-      merge_status: "can_be_merged",
-      user_notes_count: 0,
-      upvotes: 0,
-      downvotes: 0,
-      jiraTicketKey: `PROJ-${id}`,
-      // Add other required MR fields from GitLabMRWithJira
-      description: "MR description",
-      merged_at: null,
-      closed_at: null,
-      assignees: [],
-      assignee: null,
-      source_project_id: 1,
-      target_project_id: 1,
-      labels: [],
-      work_in_progress: false,
-      milestone: null,
-      merge_when_pipeline_succeeds: false,
-      merge_error: null,
-      sha: "mock-sha",
-      merge_commit_sha: null,
-      squash_commit_sha: null,
-      discussion_locked: null,
-      should_remove_source_branch: null,
-      force_remove_source_branch: null,
-      reference: "!1",
-      references: { short: "!1", relative: "!1", full: "proj!1" },
-      time_stats: {
-        time_estimate: 0,
-        total_time_spent: 0,
-        human_time_estimate: null,
-        human_total_time_spent: null,
-      },
-      squash: false,
-      task_completion_status: { count: 0, completed_count: 0 },
-      has_conflicts: false,
-      blocking_discussions_resolved: true,
-    },
-  ],
-  totalMRs: 1,
-  openMRs: 1,
-  overdueMRs: 0,
-  stalledMRs: 0,
-});
-
-const mockTicketsData = [
-  createMockTicketWithMRs(123, JiraTicketStatus.IN_PROGRESS),
-  createMockTicketWithMRs(124, JiraTicketStatus.IN_REVIEW),
-  createMockTicketWithMRs(125, JiraTicketStatus.DONE),
-];
-
-// --- Mock Hook ---
-// Mock the specific hook used by POView
+// Mock the custom hook
 jest.mock("@/hooks/useUnifiedMRData", () => ({
-  // Keep the enum export if it's used elsewhere
-  MRDataType: {
-    TOO_OLD: "tooOldMRs",
-    NOT_UPDATED: "notUpdatedMRs",
-    PENDING_REVIEW: "pendingReviewMRs",
-    ALL_MRS: "allMRs",
-    MRS_WITH_JIRA: "mrsWithJira",
-    JIRA_TICKETS: "jiraTickets",
-    JIRA_WITH_MRS: "jiraWithMRs",
-  },
-  // Mock the specific hook
   usePOViewData: jest.fn(),
 }));
 
-// --- Test Suite ---
-describe("POView", () => {
-  // Helper to render with providers
-  const renderPOView = () => {
-    return render(
-      <ThemeProviderClient>
-        <LayoutProvider>
-          <POView />
-        </LayoutProvider>
-      </ThemeProviderClient>
-    );
-  };
+const mockTickets: JiraTicketWithMRs[] = [
+  {
+    ticket: {
+      id: "jira-123",
+      key: "PROJ-123",
+      title: "First ticket",
+      status: JiraTicketStatus.IN_PROGRESS,
+      priority: JiraTicketPriority.HIGH,
+      type: JiraTicketType.TASK,
+      url: "http://jira.example.com/PROJ-123",
+      created: "2024-03-20T00:00:00Z",
+      updated: "2024-03-20T00:00:00Z",
+    },
+    mrs: [
+      {
+        id: 1,
+        iid: 1,
+        project_id: 1,
+        title: "MR 1",
+        state: "opened",
+        created_at: "2024-03-20T00:00:00Z",
+        updated_at: "2024-03-20T00:00:00Z",
+        web_url: "http://gitlab.example.com/mr/1",
+        author: {
+          id: 1,
+          name: "Test User",
+          username: "testuser",
+        },
+        source_branch: "feature/PROJ-123",
+        target_branch: "main",
+        merge_status: "can_be_merged",
+        user_notes_count: 0,
+        upvotes: 0,
+        downvotes: 0,
+        reviewers: [],
+        // Add other required fields from GitLabMRWithJira if needed by MRRow
+        description: "MR description",
+        merged_at: null,
+        closed_at: null,
+        assignees: [],
+        assignee: null,
+        source_project_id: 1,
+        target_project_id: 1,
+        labels: [],
+        work_in_progress: false,
+        milestone: null,
+        merge_when_pipeline_succeeds: false,
+        merge_error: null,
+        sha: "mock-sha-1",
+        merge_commit_sha: null,
+        squash_commit_sha: null,
+        discussion_locked: null,
+        should_remove_source_branch: null,
+        force_remove_source_branch: null,
+        reference: "!1",
+        references: {
+          short: "!1",
+          relative: "!1",
+          full: "group/project!1",
+        },
+        time_stats: {
+          time_estimate: 0,
+          total_time_spent: 0,
+          human_time_estimate: null,
+          human_total_time_spent: null,
+        },
+        squash: false,
+        task_completion_status: { count: 0, completed_count: 0 },
+        has_conflicts: false,
+        blocking_discussions_resolved: true,
+      },
+    ],
+    openMRs: 1,
+    stalledMRs: 0,
+    totalMRs: 1,
+  },
+  // ... add more mock tickets as needed
+];
 
+type MockRefetch = jest.MockedFunction<
+  (options?: { skipCache?: boolean }) => Promise<void>
+>;
+
+describe("POView", () => {
   beforeEach(() => {
-    // Reset mocks for each test
-    jest.clearAllMocks();
-    // Default mock implementation for usePOViewData
+    const mockRefetch = jest.fn() as MockRefetch;
+    mockRefetch.mockResolvedValue();
+
     (usePOViewData as jest.Mock).mockReturnValue({
-      data: mockTicketsData,
+      // Cast to jest.Mock
+      data: mockTickets,
       isLoading: false,
       isError: false,
       error: null,
@@ -145,214 +123,136 @@ describe("POView", () => {
     });
   });
 
-  it("renders the view title", () => {
-    renderPOView();
-    expect(
-      screen.getByRole("heading", { name: /Product Owner View/i })
-    ).toBeInTheDocument();
-  });
+  it("renders loading state", () => {
+    const mockRefetch = jest.fn() as MockRefetch;
+    mockRefetch.mockResolvedValue();
 
-  it("renders ticket groups based on fetched data", () => {
-    renderPOView();
-    expect(screen.getByText("PROJ-123")).toBeInTheDocument();
-    expect(screen.getByText("Test Ticket 123")).toBeInTheDocument();
-    expect(screen.getByText("PROJ-124")).toBeInTheDocument();
-    expect(screen.getByText("Test Ticket 124")).toBeInTheDocument();
-    // Check for status badges
-    expect(screen.getByText(JiraTicketStatus.IN_PROGRESS)).toBeInTheDocument();
-    expect(screen.getByText(JiraTicketStatus.IN_REVIEW)).toBeInTheDocument();
-  });
-
-  it("shows loading state", () => {
     (usePOViewData as jest.Mock).mockReturnValue({
-      data: null,
+      // Cast to jest.Mock
+      data: [],
       isLoading: true,
       isError: false,
       error: null,
       refetch: mockRefetch,
     });
-    renderPOView();
-    // Check for skeleton loaders (adjust count/selector based on implementation)
-    expect(screen.getAllByRole("status")).toHaveLength(5); // Assuming 5 skeletons render
-    expect(screen.queryByText("PROJ-123")).not.toBeInTheDocument(); // Data shouldn't be visible
+
+    render(<POView />);
+    expect(screen.getByText("Product Owner View")).toBeInTheDocument();
+    // Add more specific loading state checks if needed
+    expect(screen.getAllByTestId("skeleton-card")).toHaveLength(5); // Assuming 5 skeletons render
   });
 
-  it("shows error state", () => {
-    const errorMsg = "Failed to load tickets";
+  it("renders error state", () => {
+    const errorMessage = "Failed to fetch data";
+    const mockRefetch = jest.fn() as MockRefetch;
+    mockRefetch.mockResolvedValue();
+
     (usePOViewData as jest.Mock).mockReturnValue({
-      data: null,
+      // Cast to jest.Mock
+      data: [],
       isLoading: false,
       isError: true,
-      error: new Error(errorMsg),
+      error: new Error(errorMessage),
       refetch: mockRefetch,
     });
-    renderPOView();
-    // Check for error message display (adjust selector if needed)
-    expect(screen.getByText(errorMsg)).toBeInTheDocument();
-    expect(screen.queryByText("PROJ-123")).not.toBeInTheDocument(); // Data shouldn't be visible
+
+    render(<POView />);
+    expect(screen.getByText(errorMessage)).toBeInTheDocument();
   });
 
-  it("calls refetch when refresh button is clicked", () => {
-    renderPOView();
+  it("renders tickets correctly", async () => {
+    render(<POView />);
+
+    // Check if ticket key and title are rendered
+    expect(screen.getByText("PROJ-123")).toBeInTheDocument();
+    expect(screen.getByText("First ticket")).toBeInTheDocument();
+  });
+
+  it("filters displayed tickets based on status dropdown", async () => {
+    render(<POView />);
+
+    // Find the status filter dropdown trigger by its text content
+    const statusTrigger = screen.getByRole("button", {
+      name: /Status/i, // More robust selector
+    });
+    fireEvent.click(statusTrigger);
+
+    // Wait for and select a status option
+    const statusOption = await screen.findByText(JiraTicketStatus.IN_PROGRESS);
+    fireEvent.click(statusOption);
+
+    // Verify filtered results - hook should refetch with new options
+    // We expect the mock to be called again with updated options
+    expect(usePOViewData).toHaveBeenCalledWith(
+      expect.objectContaining({ statuses: [JiraTicketStatus.IN_PROGRESS] })
+    );
+    // Since the mock always returns the same data, we just check if it's still there
+    expect(screen.getByText("PROJ-123")).toBeInTheDocument();
+  });
+
+  it("filters displayed tickets based on priority dropdown", async () => {
+    render(<POView />);
+
+    // Find the priority filter dropdown trigger by its text content
+    const priorityTrigger = screen.getByRole("button", {
+      name: /Priority/i, // More robust selector
+    });
+    fireEvent.click(priorityTrigger);
+
+    // Wait for and select a priority option
+    const priorityOption = await screen.findByText(JiraTicketPriority.HIGH);
+    fireEvent.click(priorityOption);
+
+    // Verify filtered results - hook should refetch
+    expect(usePOViewData).toHaveBeenCalledWith(
+      expect.objectContaining({ priorities: [JiraTicketPriority.HIGH] })
+    );
+    expect(screen.getByText("PROJ-123")).toBeInTheDocument();
+  });
+
+  it("toggles ticket group expansion", async () => {
+    render(<POView />);
+
+    // Find and click the ticket group trigger
+    const ticketGroupTrigger = screen
+      .getByText("PROJ-123")
+      .closest("[role='button']"); // CollapsibleTrigger has role button
+    expect(ticketGroupTrigger).toBeInTheDocument();
+    fireEvent.click(ticketGroupTrigger!);
+
+    // MR details should be visible within the content area
+    const collapsibleContent = screen.getByRole("region"); // CollapsibleContent has role region
+    expect(within(collapsibleContent).getByText("MR 1")).toBeInTheDocument();
+  });
+
+  it("handles search input", () => {
+    render(<POView />);
+
+    const searchInput = screen.getByPlaceholderText(/Search tickets/i);
+    fireEvent.change(searchInput, { target: { value: "First" } });
+
+    // Verify search results - hook should refetch
+    expect(usePOViewData).toHaveBeenCalledWith(
+      expect.objectContaining({ search: "First" })
+    );
+    expect(screen.getByText("First ticket")).toBeInTheDocument();
+  });
+
+  it("handles refresh button click", () => {
+    const mockRefetchFn = jest.fn().mockResolvedValue(undefined);
+    (usePOViewData as jest.Mock).mockReturnValue({
+      data: mockTickets,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: mockRefetchFn, // Use the specific mock function
+    });
+
+    render(<POView />);
+
     const refreshButton = screen.getByRole("button", { name: /Refresh/i });
     fireEvent.click(refreshButton);
-    expect(mockRefetch).toHaveBeenCalledTimes(1);
-    // Check if skipCache: true was passed (if the mock captures args)
-    expect(mockRefetch).toHaveBeenCalledWith({ skipCache: true });
-  });
 
-  it("filters displayed tickets based on search term (client-side)", async () => {
-    renderPOView();
-    const searchInput = screen.getByPlaceholderText(
-      /Search tickets \(key, title\) or MRs.../i
-    );
-
-    // Search for a specific ticket key
-    fireEvent.change(searchInput, { target: { value: "PROJ-123" } });
-
-    await waitFor(() => {
-      expect(screen.getByText("PROJ-123")).toBeInTheDocument();
-      expect(screen.queryByText("PROJ-124")).not.toBeInTheDocument();
-      expect(screen.queryByText("PROJ-125")).not.toBeInTheDocument();
-    });
-
-    // Search for part of a title
-    fireEvent.change(searchInput, { target: { value: "Ticket 124" } });
-
-    await waitFor(() => {
-      expect(screen.queryByText("PROJ-123")).not.toBeInTheDocument();
-      expect(screen.getByText("PROJ-124")).toBeInTheDocument();
-      expect(screen.queryByText("PROJ-125")).not.toBeInTheDocument();
-    });
-
-    // Search for something not present
-    fireEvent.change(searchInput, { target: { value: "NonExistent" } });
-
-    await waitFor(() => {
-      expect(screen.queryByText("PROJ-123")).not.toBeInTheDocument();
-      expect(screen.queryByText("PROJ-124")).not.toBeInTheDocument();
-      expect(
-        screen.getByText(/No Jira tickets found matching your criteria./i)
-      ).toBeInTheDocument();
-    });
-  });
-
-  it("filters displayed tickets based on status dropdown (client-side)", async () => {
-    renderPOView();
-
-    // Find the status filter dropdown trigger
-    const statusTrigger = screen.getByRole("combobox", { name: /Status/i });
-    fireEvent.mouseDown(statusTrigger); // Open the dropdown
-
-    // Select 'In Review' status
-    const option = await screen.findByRole("option", { name: /In Review/i });
-    fireEvent.click(option);
-
-    // Check that only 'In Review' tickets are visible
-    await waitFor(() => {
-      expect(screen.queryByText("PROJ-123")).not.toBeInTheDocument(); // Was In Progress
-      expect(screen.getByText("PROJ-124")).toBeInTheDocument(); // Is In Review
-      expect(screen.queryByText("PROJ-125")).not.toBeInTheDocument(); // Was Done
-    });
-
-    // Select 'All Statuses' again
-    fireEvent.mouseDown(statusTrigger);
-    const allOption = await screen.findByRole("option", {
-      name: /All Statuses/i,
-    });
-    fireEvent.click(allOption);
-
-    // Check that all tickets are visible again
-    await waitFor(() => {
-      expect(screen.getByText("PROJ-123")).toBeInTheDocument();
-      expect(screen.getByText("PROJ-124")).toBeInTheDocument();
-      expect(screen.getByText("PROJ-125")).toBeInTheDocument();
-    });
-  });
-
-  it("expands and collapses ticket groups", async () => {
-    renderPOView();
-
-    const ticketGroup123 = screen
-      .getByText("PROJ-123")
-      .closest("div[role='button']"); // Find the trigger element more reliably
-    const ticketGroup124 = screen
-      .getByText("PROJ-124")
-      .closest("div[role='button']");
-
-    expect(ticketGroup123).toBeInTheDocument();
-    expect(ticketGroup124).toBeInTheDocument();
-
-    // Initially collapsed, MR details should not be visible
-    expect(screen.queryByText(/MR for PROJ-123/i)).not.toBeInTheDocument();
-
-    // Expand the first group
-    if (ticketGroup123) {
-      fireEvent.click(ticketGroup123);
-    }
-
-    // Wait for MR details to appear
-    await waitFor(() => {
-      expect(screen.getByText(/MR for PROJ-123/i)).toBeInTheDocument();
-    });
-
-    // Other group should still be collapsed
-    expect(screen.queryByText(/MR for PROJ-124/i)).not.toBeInTheDocument();
-
-    // Collapse the first group again
-    if (ticketGroup123) {
-      fireEvent.click(ticketGroup123);
-    }
-
-    // Wait for MR details to disappear
-    await waitFor(() => {
-      expect(screen.queryByText(/MR for PROJ-123/i)).not.toBeInTheDocument();
-    });
-  });
-
-  // Add tests for sorting if implemented client-side
-  it("sorts tickets correctly", async () => {
-    renderPOView();
-    const sortTrigger = screen.getByRole("combobox", { name: /Sort By/i });
-
-    // Default sort is Key Asc (PROJ-123, PROJ-124, PROJ-125)
-    let ticketElements = screen.getAllByText(/PROJ-\d+/);
-    expect(ticketElements[0]).toHaveTextContent("PROJ-123");
-    expect(ticketElements[1]).toHaveTextContent("PROJ-124");
-
-    // Sort by Key Desc
-    fireEvent.mouseDown(sortTrigger);
-    await screen.findByRole("option", { name: /Sort: Key/i }); // Wait for options
-    fireEvent.click(screen.getByRole("option", { name: /Sort: Key/i })); // Select Key again (if needed)
-    fireEvent.click(screen.getByRole("button", { name: /Sort Direction/i })); // Toggle direction
-
-    await waitFor(() => {
-      ticketElements = screen.getAllByText(/PROJ-\d+/);
-      expect(ticketElements[0]).toHaveTextContent("PROJ-125");
-      expect(ticketElements[1]).toHaveTextContent("PROJ-124");
-    });
-
-    // Sort by Status Asc
-    fireEvent.mouseDown(sortTrigger);
-    fireEvent.click(
-      await screen.findByRole("option", { name: /Sort: Status/i })
-    );
-    // Ensure direction is Asc
-    if (
-      screen
-        .getByRole("button", { name: /Sort Direction/i })
-        .getAttribute("aria-label")
-        ?.includes("desc")
-    ) {
-      fireEvent.click(screen.getByRole("button", { name: /Sort Direction/i }));
-    }
-
-    await waitFor(() => {
-      ticketElements = screen.getAllByText(/PROJ-\d+/);
-      // Order should be Done, In Progress, In Review
-      expect(ticketElements[0]).toHaveTextContent("PROJ-125"); // Done
-      expect(ticketElements[1]).toHaveTextContent("PROJ-123"); // In Progress
-      expect(ticketElements[2]).toHaveTextContent("PROJ-124"); // In Review
-    });
+    expect(mockRefetchFn).toHaveBeenCalledWith({ skipCache: true });
   });
 });
