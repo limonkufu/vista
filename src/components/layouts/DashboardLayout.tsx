@@ -6,6 +6,7 @@ import { useLayout } from "@/contexts/LayoutContext";
 import { ViewType } from "@/types/ViewTypes";
 import { Navbar } from "@/components/Navbar";
 import { EnhancedNavbar } from "@/components/layouts/EnhancedNavbar";
+import { Footer } from "@/components/Footer";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -58,6 +59,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     <div className="min-h-screen flex flex-col">
       <NavbarComponent />
       <main className="flex-1">{renderContent()}</main>
+      <Footer />
     </div>
   );
 }
