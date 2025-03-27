@@ -1,6 +1,6 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-# GitLab MRs Dashboard
+# Vista
 
 A dashboard for monitoring GitLab merge requests, focusing on team hygiene metrics such as age, update frequency, and review status.
 
@@ -41,7 +41,7 @@ A dashboard for monitoring GitLab merge requests, focusing on team hygiene metri
 
    ```bash
    git clone <repository-url>
-   cd gitlab-mrs-dashboard
+   cd vista
    ```
 
 2. Install dependencies:
@@ -100,20 +100,14 @@ Build and run with Docker:
 
 ```bash
 # Build image
-docker build -t gitlab-mrs-dashboard .
+docker build -t vista .
 
 # Run container
 docker run -p 3000:3000 \
   -e GITLAB_API_TOKEN=your_token \
   -e GITLAB_USER_IDS=user_ids \
   -e API_KEY=your_api_key \
-  gitlab-mrs-dashboard
-```
-
-Or use docker-compose:
-
-```bash
-docker-compose up
+  vista
 ```
 
 ## Deployment
@@ -137,79 +131,18 @@ Required environment variables:
 
 ### CI/CD Pipeline
 
-The project includes a GitLab CI/CD pipeline with:
+The project includes a GitHub Actions workflow with:
 
-1. Automated testing
-2. Security scanning
-3. Docker image building
-4. Production deployment
+1. Automated testing (unit tests and E2E tests)
+2. Security scanning with Snyk
+3. Docker image building and publishing
+4. Production deployment (configurable)
 
 ### Production Deployment Checklist
 
-- [ ] Set up environment variables
+- [ ] Set up environment variables in GitHub Secrets
 - [ ] Configure SSL certificates
 - [ ] Set up monitoring
 - [ ] Configure backup strategy
 - [ ] Test rate limiting
 - [ ] Verify security headers
-
-## API Documentation
-
-### Endpoints
-
-#### GET /api/mrs/too-old
-
-Returns MRs older than 28 days.
-
-#### GET /api/mrs/not-updated
-
-Returns MRs not updated in 14 days.
-
-#### GET /api/mrs/pending-review
-
-Returns MRs pending review for more than 7 days.
-
-#### GET /api/users
-
-Returns the current team user IDs.
-
-#### GET /api/users?group={groupName}
-
-Fetches users from a specific GitLab group.
-
-Params:
-
-- `group`: The name of the GitLab group to fetch users from
-- `refresh`: (Optional) Set to any value to bypass cache
-
-### Authentication
-
-All API endpoints require an API key in the `x-api-key` header.
-
-### Rate Limiting
-
-- 100 requests per minute per IP
-- Returns 429 status code when limit exceeded
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs)
-- [Learn Next.js](https://nextjs.org/learn)
-
-## Additional Documentation
-
-For detailed information about the API endpoints and component structure, see the [API Documentation](./docs/api.md).
